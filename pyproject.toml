@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[project]
+name = "pdfsnoop"
+version = "0.1.0"
+description = "GUI for exploring PDF internals"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pikepdf>=10.0.0",
+    "PyGObject>=3.42.0",
+    "pycairo>=1.20.0",
+]
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: GTK",
+    "Topic :: Multimedia :: Graphics :: Viewers",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+]
+dev = [
+    "pdfsnoop[test]",
+    "black",
+    "isort",
+]
+
+[project.scripts]
+pdfsnoop = "pdfsnoop.gui:main"
+
+[tool.isort]
+profile = "black"
+line_length = 99
+
+[tool.black]
+line-length = 99
+target-version = ['py310']
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=src/pdfsnoop --cov-report=term-missing"
+testpaths = ["tests"]
