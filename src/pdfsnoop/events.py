@@ -312,7 +312,9 @@ class EventHandler:
         return surface, scaled_w, scaled_h, page, cr, fit_scale, width, height
 
     def _render_page_with_highlight(self, page_idx, target_font_name, rotation):
-        surface, scaled_w, scaled_h, page, cr, _, w, h = self._render_page_to_surface(page_idx)
+        surface, scaled_w, scaled_h, page, cr, _, w, h = self._render_page_to_surface(
+            page_idx
+        )
         # 2. Highlight Logic
         # Get every character's position and its attributes
         success, rectangles = page.get_text_layout()
@@ -333,8 +335,10 @@ class EventHandler:
                 # Check if the font name matches
                 if base_target in reported_name or reported_name in base_target:
                     # Draw a rectangle for every character in this span
-                    print(f"rectangles: {len(rectangles)}, attr span: {attr.start_index} to {attr.end_index}")
-                    for i in range(attr.start_index, attr.end_index+1):
+                    print(
+                        f"rectangles: {len(rectangles)}, attr span: {attr.start_index} to {attr.end_index}"
+                    )
+                    for i in range(attr.start_index, attr.end_index + 1):
                         if i < len(rectangles):
                             r = rectangles[i]
                             width = abs(r.x2 - r.x1)

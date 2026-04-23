@@ -26,7 +26,7 @@ pip install pdfsnoop
 On Debian/Ubuntu you may need system packages:
 
 ```bash
-sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-poppler-0.18
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-poppler-0.18 libgirepository-2.0-dev
 ```
 
 ## Usage

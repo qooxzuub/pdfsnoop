@@ -261,10 +261,14 @@ class PDFSnoopGUI(Gtk.Window):
         self.tree_view.scroll_to_cell(path, None, True, 0.5, 0.0)
 
 
-if __name__ == "__main__":
+def main():
     if len(sys.argv) < 2:
         print("Usage: python -m src.pdfsnoop.gui <file.pdf>")
         sys.exit(1)
 
     app = PDFSnoopGUI(sys.argv[1])
     Gtk.main()
+
+
+if __name__ == "__main__":
+    main()
