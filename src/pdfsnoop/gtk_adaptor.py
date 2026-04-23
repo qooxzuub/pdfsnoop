@@ -2,7 +2,7 @@ import html
 import pikepdf
 from collections import defaultdict
 
-from .pdf_utils import TreeAdapter, JumpReference, get_description, format_pdf_string
+from .pdf_utils import TreeAdapter, JumpReference, format_pdf_string
 
 
 import gi
@@ -128,6 +128,19 @@ class GtkAdapter(TreeAdapter):
         markup = f"<span color='#729fcf'><i>↪ {name}</i></span> <span color='#c4a000'>(Ref to {objgen[0]} {objgen[1]})</span>"
         raw_text = f"↪ {name} jump {objgen}"
         self.store.append(parent_iter, [markup, JumpReference(objgen), raw_text, name])
+
+    def has_placeholder(self, node_iter):
+        """Returns True if this node's only child is a placeholder (col 1 is None)."""
+        child = self.store.iter_children(node_iter)
+        if child is None:
+            return False
+        return self.store[child][1] is None
+
+    def remove_placeholder(self, node_iter):
+        """Remove the placeholder child from this node."""
+        child = self.store.iter_children(node_iter)
+        if child is not None and self.store[child][1] is None:
+            self.store.remove(child)
 
     def create_deferred(self, parent_iter, pdf_obj, name):
         markup = f"<span color='gray'><i>{name} [Deferred]</i></span>"

@@ -43,7 +43,6 @@ class EventHandler:
 
             # The placeholder is the only node where pdf_obj is None
             if pdf_obj is None:
-                print(f"Lazy loading children for node at {path}...")
                 model.remove(child_iter)
 
                 # Get the actual PDF container from the parent row
@@ -57,7 +56,6 @@ class EventHandler:
 
     def on_tree_row_activated(self, tree_view, path, column):
         """Triggered on Double-Click or pressing Enter on a row."""
-        print("activated")
         model = tree_view.get_model()
         treeiter = model.get_iter(path)
         pdf_obj = model[treeiter][1]
@@ -141,44 +139,16 @@ class EventHandler:
         return False
 
     def on_search_changed(self, entry):
-        text = entry.get_text().lower()
-        self.app.search_matches = []
-        if not text:
-            return
-
-        def do_search(tree_iter):
-            while tree_iter:
-                raw_text = self.app.store[tree_iter][2]
-                if raw_text and text in raw_text.lower():
-                    self.app.search_matches.append(self.app.store.get_path(tree_iter))
-                if self.app.store.iter_has_child(tree_iter):
-                    do_search(self.app.store.iter_children(tree_iter))
-                tree_iter = self.app.store.iter_next(tree_iter)
-
-        do_search(self.app.store.get_iter_first())
-
-        if self.app.search_matches:
-            self.app.current_match_index = 0
-            self.app._jump_to_current_match()
-
-    def on_search_next(self, entry):
-        if self.app.search_matches:
-            self.app.current_match_index = (self.app.current_match_index + 1) % len(
-                self.app.search_matches
-            )
-            self.app._jump_to_current_match()
-
-    def on_search_prev(self, entry):
-        if self.app.search_matches:
-            self.app.current_match_index = (self.app.current_match_index - 1) % len(
-                self.app.search_matches
-            )
-            self.app._jump_to_current_match()
+        self.app.search.start(entry.get_text())
 
     def on_search_cancel(self, entry):
-        self.app.search_bar.set_search_mode(False)
-        self.app.tree_view.grab_focus()
-        # Note: We no longer revert the cursor! You stay where the search left you.
+        self.app.search.cancel()
+
+    def on_search_next(self, entry):
+        self.app.search.next_match()
+
+    def on_search_prev(self, entry):
+        self.app.search.prev_match()
 
     def on_selection_changed(self, selection):
         model, treeiter = selection.get_selected()

@@ -10,6 +10,7 @@ from .pdf_utils import prepopulate_spine
 from .gtk_adaptor import GtkAdapter
 from .actions import ActionHandler
 from .events import EventHandler
+from .search import SearchController
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk  # noqa: E402
@@ -50,6 +51,7 @@ class PDFSnoopGUI(Gtk.Window):
         self.store = Gtk.TreeStore(str, object, str, str)
         self.tree_view = Gtk.TreeView(model=self.store)
         self.tree_view.set_enable_search(False)
+        self.search = SearchController(self)
 
         self.adapter = GtkAdapter(self.store)
 
@@ -256,12 +258,6 @@ class PDFSnoopGUI(Gtk.Window):
         self.store.clear()
         self.adapter.registry.clear()  # Reset registry for new load
         prepopulate_spine(self.pdf, self.adapter)
-
-    def _jump_to_current_match(self):
-        path = self.search_matches[self.current_match_index]
-        self.tree_view.expand_to_path(path)
-        self.tree_view.set_cursor(path, None, False)
-        self.tree_view.scroll_to_cell(path, None, True, 0.5, 0.0)
 
     def navigate_to_objgen(self, objgen):
         """Universal helper to safely navigate the tree to a specific PDF object ID, handling lazy-loading."""

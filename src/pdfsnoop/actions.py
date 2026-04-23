@@ -156,7 +156,6 @@ class ActionHandler:
 
     def action_jump_page(self, widget):
         """Prompts for a page number and jumps the tree to that PDF Dictionary."""
-        print("action_jump_page")
         total_pages = len(self.app.pdf.pages)
         if total_pages == 0:
             return
@@ -187,12 +186,10 @@ class ActionHandler:
 
         # 2. Process the input
         if response == Gtk.ResponseType.OK:
-            print("got ok")
             try:
                 page_num = int(page_text)  # This will raise ValueError on "asdkfjh"
 
                 if 1 <= page_num <= total_pages:
-                    print(f"page_num={page_num} in range")
                     target_page = self.app.pdf.pages[page_num - 1]
                     objgen = target_page.objgen
                     if not self.app.navigate_to_objgen(objgen):
