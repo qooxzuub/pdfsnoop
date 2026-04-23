@@ -7,9 +7,7 @@ from pdfsnoop.pdf_utils import (
     is_content_stream,
     sort_pdf_keys,
     JumpReference,
-    DeferredJumpReference,
     TreeAdapter,
-    walk_pdf,
     disassemble_content_stream,
 )
 
@@ -245,29 +243,6 @@ class TestSortPdfKeys:
 # ==========================================
 
 
-def test_jump_reference_classes():
-    """Hits lines 51-61: Basic initialization of reference containers."""
-    jr = JumpReference("target_node_1", None)
-    assert jr.target_node == "target_node_1"
-
-    djr = DeferredJumpReference("pdf_obj_1", "original_name")
-    assert djr.pdf_obj == "pdf_obj_1"
-    assert djr.original_name == "original_name"
-
-
-def test_tree_adapter_interface():
-    """Hits lines 64-77: Ensure the base interface doesn't throw errors."""
-    adapter = TreeAdapter()
-    # These just pass, but calling them marks them as covered
-    adapter.create_node(None, None, "name", "type")
-    adapter.create_jump(None, None, "name", None)
-    adapter.create_deferred(None, None, "name")
-    adapter.resolve_deferred(None, None, "name", False)
-
-
-# ==========================================
-# 2. walk_pdf Traversal Tests (Lines 80-159)
-# ==========================================
 
 
 class MockAdapter(TreeAdapter):
@@ -286,58 +261,6 @@ class MockAdapter(TreeAdapter):
 
     def create_jump(self, parent, target_node, name, obj):
         self.jumps.append(name)
-
-    def create_deferred(self, parent, pdf_obj, name):
-        self.deferred.append(name)
-        return f"ui_deferred_{name}"
-
-    def resolve_deferred(self, deferred_node, target_node, name, is_orphan):
-        self.resolved.append((name, is_orphan))
-
-
-def test_walk_pdf_basic_and_cycles():
-    """Hits lines 80-135: Basic traversal and Jump (cycle) detection."""
-    pdf = pikepdf.Pdf.new()
-
-    # Create a manual cycle to trigger the Jump logic (Line 100-102)
-    dict1 = pdf.make_indirect(pikepdf.Dictionary(Name="/Node1"))
-    dict2 = pdf.make_indirect(pikepdf.Dictionary(Name="/Node2"))
-    dict1.Child = dict2
-    dict2.Parent = dict1  # Cycle!
-
-    adapter = MockAdapter()
-    walk_pdf(dict1, adapter, name="Root")
-
-    # Verify nodes were created
-    created_names = [n[0] for n in adapter.nodes]
-    assert "Root" in created_names
-    assert "/Child" in created_names
-
-    # Verify the cycle was caught and turned into a JumpReference
-    assert "/Parent" in adapter.jumps
-
-    # Verify backlinks dictionary was populated (Line 158-159)
-    assert len(adapter.backlinks) > 0
-
-
-def test_walk_pdf_orphans_and_deferred():
-    """Hits lines 104-109 and 137-156: Phase 2 Orphan recovery."""
-    pdf = pikepdf.Pdf.new()
-
-    # Create a Page object that is NOT part of a /Kids array
-    # This triggers the 'is_orphan' logic.
-    orphan_page = pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.Page))
-    root = pdf.make_indirect(pikepdf.Dictionary(MyOrphan=orphan_page))
-
-    adapter = MockAdapter()
-    walk_pdf(root, adapter, name="Root")
-
-    # Verify it was deferred initially (Line 107-109)
-    assert "MyOrphan" in adapter.deferred
-
-    # Verify Phase 2 promoted it to an orphan (Line 147-150)
-    # is_orphan should be True
-    assert ("MyOrphan", True) in adapter.resolved
 
 
 # ==========================================
@@ -371,59 +294,6 @@ def test_disassemble_content_stream():
     # 'Tj' description: 'Show text'
     assert "% Show text" in output
 
-
-def test_walk_pdf_orphans_and_deferred():
-    """Hits lines 104-109 and 137-156: Phase 2 Orphan recovery."""
-    pdf = pikepdf.Pdf.new()
-
-    # Create a Page object that is NOT part of a /Kids array
-    # This triggers the 'is_orphan' logic.
-    orphan_page = pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.Page))
-    root = pdf.make_indirect(pikepdf.Dictionary(MyOrphan=orphan_page))
-
-    adapter = MockAdapter()
-    walk_pdf(root, adapter, name="Root")
-
-    # FIX: pikepdf dictionary keys always include the leading slash
-    assert "/MyOrphan" in adapter.deferred
-    assert ("/MyOrphan", True) in adapter.resolved
-
-
-def test_walk_pdf_resolved_deferred():
-    """Hits lines 143-146: Happy path for deferred pages found later."""
-    pdf = pikepdf.Pdf.new()
-
-    # Standard page tree structure: a Page referenced by Root, but also inside Kids
-    page = pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.Page))
-    kids_array = pdf.make_indirect(pikepdf.Array([page]))
-
-    # FIX: walk_pdf sorts keys. /Kids gets priority 0, standard keys get 2.
-    # We abuse the /Type key (priority -1) so it sorts first, appends last,
-    # and pops FIRST. This guarantees it is deferred before /Kids is parsed.
-    root = pdf.make_indirect(pikepdf.Dictionary(Type=page, Kids=kids_array))
-
-    adapter = MockAdapter()
-    walk_pdf(root, adapter, name="Root")
-
-    # The /Type reference should be resolved as a Jump (is_orphan=False)
-    # because it was found legally inside /Kids a moment later.
-    assert ("/Type", False) in adapter.resolved
-
-
-def test_walk_pdf_stream_node():
-    """Hits line 117: Stream node creation."""
-    pdf = pikepdf.Pdf.new()
-
-    # Create a raw stream to ensure it triggers the Stream node_type
-    stream = pdf.make_indirect(pikepdf.Stream(pdf, b"stream data"))
-    root = pdf.make_indirect(pikepdf.Dictionary(MyStream=stream))
-
-    adapter = MockAdapter()
-    walk_pdf(root, adapter, name="Root")
-
-    # Verify a Stream node was created
-    created_types = [n[1] for n in adapter.nodes]
-    assert "Stream" in created_types
 
 
 # ---------------------------------------------------------------------------

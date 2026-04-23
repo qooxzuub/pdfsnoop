@@ -60,27 +60,13 @@ class JumpReference:
         self.objgen = objgen
 
 
-class DeferredJumpReference:
-    """Stores the actual object so we can build it later if it turns out to be an orphan."""
-
-    def __init__(self, pdf_obj, original_name):
-        self.pdf_obj = pdf_obj
-        self.original_name = original_name
-
-
 class TreeAdapter:
-    """Interface to be implemented by TUI and GUI."""
+    """Interface to be implemented by GUI."""
 
     def create_node(self, parent, pdf_obj, name, label_type):
         pass
 
     def create_jump(self, parent, target_node, name, obj):
-        pass
-
-    def create_deferred(self, parent, pdf_obj, name):
-        pass
-
-    def resolve_deferred(self, deferred_node, target_node, name, is_orphan):
         pass
 
 
@@ -224,19 +210,6 @@ def is_link_with_page(pdf, target_obj, ancestors):
     if is_annot and target_obj.Subtype == pikepdf.Name("/Link"):
         return True, page_idx, rect
     return False, None, None
-
-
-def get_description(obj):
-    """Returns a short string describing the PDF object type and size."""
-    if isinstance(obj, pikepdf.Dictionary):
-        return f"Dict({len(obj)})"
-    if isinstance(obj, pikepdf.Array):
-        return f"Array({len(obj)})"
-    if isinstance(obj, pikepdf.Stream):
-        return "Stream"
-    if isinstance(obj, pikepdf.Name):
-        return str(obj)
-    return str(obj)
 
 
 def prepopulate_spine(pdf, adapter):

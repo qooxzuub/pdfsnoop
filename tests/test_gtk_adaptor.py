@@ -44,7 +44,7 @@ def test_create_node_dictionary(adapter):
     pdf_dict.objgen = (10, 0)
     pdf_dict.__len__.return_value = 5
 
-    it = adapter.create_node(None, pdf_dict, "Root", "Dictionary")
+    it = adapter.create_node(None,  "Root", pdf_dict,)
 
     # Check if markup contains expected fragments
     markup = adapter.store[it][0]
@@ -75,22 +75,6 @@ def test_get_iter_from_objgen_string(adapter):
     assert adapter.get_iter_from_objgen_string("garbage") is None
 
 
-def test_resolve_deferred_orphan(adapter):
-    # Create a deferred node
-    ui_iter = adapter.create_deferred(None, None, "PendingObj")
-
-    # Resolve as orphan (becomes a Dictionary)
-    pdf_dict = MagicMock()
-    pdf_dict.is_indirect = True
-    pdf_dict.objgen = (30, 0)
-    pdf_dict.__len__.return_value = 2
-
-    adapter.resolve_deferred(ui_iter, pdf_dict, "ResolvedName", is_orphan=True)
-
-    assert "Dict[2]" in adapter.store[ui_iter][0]
-    assert adapter.store[ui_iter][1] == pdf_dict
-
-
 import pytest
 from unittest.mock import MagicMock
 from pdfsnoop.gtk_adaptor import GtkAdapter
@@ -112,18 +96,18 @@ def test_create_node_various_types(adapter):
     pdf_arr = MagicMock()
     pdf_arr.is_indirect = False
     pdf_arr.__len__.return_value = 3
-    it_arr = adapter.create_node(None, pdf_arr, "MyArray", "Array")
+    it_arr = adapter.create_node(None, "MyArray",  pdf_arr)
     assert "Array[3]" in adapter.store[it_arr][0]
 
     # 2. Stream
     pdf_stm = MagicMock()
     pdf_stm.is_indirect = False
-    it_stm = adapter.create_node(None, pdf_stm, "MyStream", "Stream")
+    it_stm = adapter.create_node(None, "MyStream", pdf_stm, )
     assert "Stream" in adapter.store[it_stm][0]
 
     # 3. Scalar/Else (e.g. a String or Name)
     pdf_val = "HelloWorld"
-    it_val = adapter.create_node(None, pdf_val, "MyKey", "Scalar")
+    it_val = adapter.create_node(None, "MyKey", pdf_val)
     assert "HelloWorld" in adapter.store[it_val][0]
     assert "MyKey" in adapter.store[it_val][2]
 
@@ -147,19 +131,3 @@ def test_create_jump(adapter):
     assert "↪ MyLink" in adapter.store[jump_it][0]
 
 
-def test_resolve_deferred_jump(adapter):
-    """Hits lines 102-109: Resolving a deferred node as a Jump."""
-    ui_iter = adapter.create_deferred(None, None, "PendingJump")
-
-    # In this case, 'target' is a Gtk.TreeIter (our mock string)
-    target_iter = "iter_target_location"
-
-    adapter.resolve_deferred(ui_iter, target_iter, "JumpName", is_orphan=False)
-
-    markup = adapter.store[ui_iter][0]
-    jump_ref = adapter.store[ui_iter][1]
-
-    assert "Jump" in markup
-    assert isinstance(jump_ref, JumpReference)
-    # Corrected attribute: target_node instead of path
-    assert jump_ref.target_node == ["iter_target_location"]

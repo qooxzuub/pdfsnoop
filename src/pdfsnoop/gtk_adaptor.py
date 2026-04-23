@@ -19,30 +19,6 @@ class GtkAdapter(TreeAdapter):
         self.registry = {}
         self.backlinks = defaultdict(set)
 
-    def get_iter_from_objgen_string(self, objgen_str):
-        """
-        Converts "10 0" or "Trailer" back into a Gtk.TreeIter.
-        Useful for jumping to a parent from the backlink list.
-        """
-        if objgen_str == "Trailer":
-            return self.store.get_iter_first()
-
-        try:
-            # Split "10 0" into (10, 0)
-            num, gen = map(int, objgen_str.split())
-            return self.registry.get((num, gen))
-        except (ValueError, AttributeError):
-            return None
-
-    def _get_og_label(self, pdf_obj, markup=True):
-        """Helper to format the (Obj N:G) string."""
-        if not getattr(pdf_obj, "is_indirect", False):
-            return ""
-        num, gen = pdf_obj.objgen
-        if markup:
-            return f" <span color='#c4a000'>(Obj {num}:{gen})</span>"
-        return f" (Obj {num}:{gen})"
-
     def _get_markup_etc(self, pdf_obj, name, is_ind, label_type=None):
         # Markup labels
         if label_type is None:
@@ -141,28 +117,3 @@ class GtkAdapter(TreeAdapter):
         child = self.store.iter_children(node_iter)
         if child is not None and self.store[child][1] is None:
             self.store.remove(child)
-
-    def create_deferred(self, parent_iter, pdf_obj, name):
-        markup = f"<span color='gray'><i>{name} [Deferred]</i></span>"
-        raw_text = f"{name} [Deferred]"
-        return self.store.append(parent_iter, [markup, pdf_obj, raw_text, name])
-
-    def resolve_deferred(self, ui_iter, target, name, is_orphan):
-        if is_orphan:
-            pdf_obj = target
-            markup = f"<span color='#729fcf'><b>{name}</b></span> <span color='#c4a000'>(Obj {pdf_obj.objgen[0]}:{pdf_obj.objgen[1]})</span> <span color='gray'>Dict[{len(pdf_obj)}]</span>"
-            raw_text = f"{name} (Obj {pdf_obj.objgen[0]}:{pdf_obj.objgen[1]}) Dict[{len(pdf_obj)}]"
-
-            self.store.set_value(ui_iter, 0, markup)
-            self.store.set_value(ui_iter, 1, pdf_obj)
-            self.store.set_value(ui_iter, 2, raw_text)
-            self.store.set_value(ui_iter, 3, name)
-        else:
-            markup = f"<span color='gray'><i>↪ {name} (Jump)</i></span>"
-            raw_text = f"↪ {name} (Jump)"
-            target_path = self.store.get_path(target)
-
-            self.store.set_value(ui_iter, 0, markup)
-            self.store.set_value(ui_iter, 1, JumpReference(target_path, target))
-            self.store.set_value(ui_iter, 2, raw_text)
-            self.store.set_value(ui_iter, 3, name)
