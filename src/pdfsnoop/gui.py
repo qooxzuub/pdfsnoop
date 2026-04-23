@@ -6,7 +6,7 @@ import gi
 
 import pikepdf
 
-from .pdf_utils import walk_pdf
+from .pdf_utils import prepopulate_spine
 from .gtk_adaptor import GtkAdapter
 from .actions import ActionHandler
 from .events import EventHandler
@@ -50,6 +50,8 @@ class PDFSnoopGUI(Gtk.Window):
         self.store = Gtk.TreeStore(str, object, str, str)
         self.tree_view = Gtk.TreeView(model=self.store)
         self.tree_view.set_enable_search(False)
+
+        self.adapter = GtkAdapter(self.store)
 
         renderer = Gtk.CellRendererText()
         column = Gtk.TreeViewColumn("PDF Structure", renderer, markup=0)
@@ -129,6 +131,7 @@ class PDFSnoopGUI(Gtk.Window):
         self.tree_view.connect("key-press-event", self.events.on_tree_key_press)
         self.tree_view.connect("button-press-event", self.events.on_tree_right_click)
         self.tree_view.connect("row-activated", self.events.on_tree_row_activated)
+        self.tree_view.connect("row-expanded", self.events.on_row_expanded)
 
         self.content_view.connect("move-cursor", self.events.on_stream_cursor_moved)
 
@@ -250,9 +253,9 @@ class PDFSnoopGUI(Gtk.Window):
         return self.item_preview_pages.get_active()
 
     def populate_ui_tree(self):
-        self.adapter = GtkAdapter(self.store)
-        # Let the universal engine do the work
-        walk_pdf(self.pdf.trailer, self.adapter, name="Trailer")
+        self.store.clear()
+        self.adapter.registry.clear()  # Reset registry for new load
+        prepopulate_spine(self.pdf, self.adapter)
 
     def _jump_to_current_match(self):
         path = self.search_matches[self.current_match_index]
@@ -260,13 +263,43 @@ class PDFSnoopGUI(Gtk.Window):
         self.tree_view.set_cursor(path, None, False)
         self.tree_view.scroll_to_cell(path, None, True, 0.5, 0.0)
 
+    def navigate_to_objgen(self, objgen):
+        """Universal helper to safely navigate the tree to a specific PDF object ID, handling lazy-loading."""
+        from gi.repository import Gtk
+
+        target_ref = self.adapter.registry.get(objgen)
+        if not target_ref or not target_ref.valid():
+            return False
+
+        # 1. Expand top-down, one level at a time to trigger lazy-loading safely
+        path = target_ref.get_path()
+        for i in range(1, path.get_depth()):
+            # Re-fetch path because lazy-loading shifts sibling indices!
+            current_path = target_ref.get_path()
+            if not current_path:
+                break
+            ancestor_path = Gtk.TreePath.new_from_indices(
+                current_path.get_indices()[:i]
+            )
+            self.tree_view.expand_row(ancestor_path, False)
+
+        # 2. Get the final stable path after all lazy-loads have resolved
+        final_path = target_ref.get_path()
+        if final_path:
+            self.tree_view.set_cursor(final_path, None, False)
+            self.tree_view.scroll_to_cell(final_path, None, True, 0.5, 0.5)
+            self.tree_view.grab_focus()
+            return True
+
+        return False
+
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python -m src.pdfsnoop.gui <file.pdf>")
         sys.exit(1)
 
-    app = PDFSnoopGUI(sys.argv[1])
+    PDFSnoopGUI(sys.argv[1])
     Gtk.main()
 
 

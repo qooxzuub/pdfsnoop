@@ -1,0 +1,1 @@
+- when normalizing, make hex strings readable if possible

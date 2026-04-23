@@ -156,6 +156,7 @@ class ActionHandler:
 
     def action_jump_page(self, widget):
         """Prompts for a page number and jumps the tree to that PDF Dictionary."""
+        print("action_jump_page")
         total_pages = len(self.app.pdf.pages)
         if total_pages == 0:
             return
@@ -186,22 +187,18 @@ class ActionHandler:
 
         # 2. Process the input
         if response == Gtk.ResponseType.OK:
+            print("got ok")
             try:
                 page_num = int(page_text)  # This will raise ValueError on "asdkfjh"
 
                 if 1 <= page_num <= total_pages:
+                    print(f"page_num={page_num} in range")
                     target_page = self.app.pdf.pages[page_num - 1]
                     objgen = target_page.objgen
-                    target_iter = self.app.adapter.registry.get(objgen)
-
-                    if target_iter:
-                        path = self.app.store.get_path(target_iter)
-                        self.app.tree_view.expand_to_path(path)
-                        self.app.tree_view.set_cursor(path, None, False)
-                        self.app.tree_view.scroll_to_cell(path, None, True, 0.5, 0.0)
-                        self.app.tree_view.grab_focus()
-                    else:
-                        show_error("Page node not found in the UI tree registry.")
+                    if not self.app.navigate_to_objgen(objgen):
+                        self._show_error(
+                            "Jump Failed", "Could not locate that page in the tree."
+                        )
                 else:
                     show_error(
                         f"Invalid page number.\nMust be between 1 and {total_pages}."

@@ -1,12 +1,19 @@
 import html
-
 import pikepdf
 from collections import defaultdict
 
-from .pdf_utils import TreeAdapter, JumpReference, format_pdf_string
+from .pdf_utils import TreeAdapter, JumpReference, get_description, format_pdf_string
+
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
 
 
 class GtkAdapter(TreeAdapter):
+    PLACEHOLDER = "Loading..."
+
     def __init__(self, store):
         self.store = store
         self.registry = {}
@@ -36,10 +43,18 @@ class GtkAdapter(TreeAdapter):
             return f" <span color='#c4a000'>(Obj {num}:{gen})</span>"
         return f" (Obj {num}:{gen})"
 
-    def create_node(self, parent_iter, pdf_obj, name, label_type):
-        is_ind = getattr(pdf_obj, "is_indirect", False)
-
+    def _get_markup_etc(self, pdf_obj, name, is_ind, label_type=None):
         # Markup labels
+        if label_type is None:
+            if isinstance(pdf_obj, pikepdf.Dictionary):
+                label_type = "Dictionary"
+            elif isinstance(pdf_obj, pikepdf.Array):
+                label_type = "Array"
+            elif isinstance(pdf_obj, pikepdf.String):
+                label_type = "String"
+            elif isinstance(pdf_obj, pikepdf.Stream):
+                label_type = "Stream"
+
         obj_label = (
             f" <span color='#c4a000'>(Obj {pdf_obj.objgen[0]}:{pdf_obj.objgen[1]})</span>"
             if is_ind
@@ -58,7 +73,7 @@ class GtkAdapter(TreeAdapter):
         elif label_type == "Stream":
             markup = f"<span color='#ef2929'><b>{name}</b></span>{obj_label} <span color='gray'>Stream</span>"
             raw_text = f"{name}{raw_obj_label} Stream"
-        elif isinstance(pdf_obj, (str, pikepdf.String)):
+        elif label_type == "String":
             raw_val_formatted = format_pdf_string(pdf_obj)
             raw_val_to_show = (
                 raw_val_formatted
@@ -74,24 +89,45 @@ class GtkAdapter(TreeAdapter):
             markup = f"<span color='#34e2e2'><b>{name}</b></span>: {val_str}"
             raw_text = f"{name}{raw_obj_label}: {raw_val}"
 
-        new_iter = self.store.append(parent_iter, [markup, pdf_obj, raw_text, name])
+        return markup, raw_text
+
+    def create_node(self, parent_iter, name, pdf_obj):
+        """Creates a standard node with restored color scheme."""
+
+        # Color Logic: Blue keys, Gold object IDs, Gray metadata
+        obj_info = ""
+        is_ind = getattr(pdf_obj, "is_indirect", False)
         if is_ind:
-            self.registry[pdf_obj.objgen] = new_iter
-        return new_iter
+            obj_info = f" <span color='#c4a000'>({pdf_obj.objgen[0]} {pdf_obj.objgen[1]} obj)</span>"
 
-    def create_jump(self, parent_iter, target_iter, name, pdf_obj):
-        # Peek at the target node to get its Object ID
-        target_obj = self.store[target_iter][1]
-        og_label = self._get_og_label(target_obj, markup=True)
-        og_raw = self._get_og_label(target_obj, markup=False)
+        # Restore the colors: Blue for name, Gray for description
+        # markup = f"<span color='#729fcf'><b>{name}</b></span>{obj_info} <span color='#888a85'>{description}</span>"
+        # raw_text = f"{name} {description}"
+        markup, raw_text = self._get_markup_etc(pdf_obj, name, is_ind)
 
-        markup = f"<span color='gray'><i>↪ {name} (Jump)</i></span>{og_label}"
-        raw_text = f"↪ {name} (Jump){og_raw}"
+        treeiter = self.store.append(parent_iter, [markup, pdf_obj, raw_text, name])
 
-        target_path = self.store.get_path(target_iter)
-        self.store.append(
-            parent_iter, [markup, JumpReference(target_path, pdf_obj), raw_text, name]
-        )
+        # FIX: Use TreeRowReference for the registry (much more stable for jumping)
+        if getattr(pdf_obj, "is_indirect", False):
+            if pdf_obj.objgen not in self.registry:
+                path = self.store.get_path(treeiter)
+                self.registry[pdf_obj.objgen] = Gtk.TreeRowReference.new(
+                    self.store, path
+                )
+
+        if isinstance(pdf_obj, (pikepdf.Dictionary, pikepdf.Array, pikepdf.Stream)):
+            if isinstance(pdf_obj, pikepdf.Stream) or len(pdf_obj) > 0:
+                self.store.append(
+                    treeiter, [f"<i>{self.PLACEHOLDER}</i>", None, "", ""]
+                )
+
+        return treeiter
+
+    def create_jump(self, parent_iter, objgen, name, pdf_obj):
+        """Creates a 'Jump' node with blue italics and gold reference."""
+        markup = f"<span color='#729fcf'><i>↪ {name}</i></span> <span color='#c4a000'>(Ref to {objgen[0]} {objgen[1]})</span>"
+        raw_text = f"↪ {name} jump {objgen}"
+        self.store.append(parent_iter, [markup, JumpReference(objgen), raw_text, name])
 
     def create_deferred(self, parent_iter, pdf_obj, name):
         markup = f"<span color='gray'><i>{name} [Deferred]</i></span>"

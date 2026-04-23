@@ -4,7 +4,6 @@ gi.require_version("Gtk", "3.0")
 
 import unicodedata
 
-from collections import defaultdict
 
 import pikepdf
 
@@ -55,9 +54,10 @@ def sort_pdf_keys(item):
 
 
 class JumpReference:
-    def __init__(self, target_node, pdf_obj):
-        self.target_node = target_node
-        self.pdf_obj = pdf_obj
+    """Represents a link to an indirect object already present elsewhere in the tree."""
+
+    def __init__(self, objgen):
+        self.objgen = objgen
 
 
 class DeferredJumpReference:
@@ -82,88 +82,6 @@ class TreeAdapter:
 
     def resolve_deferred(self, deferred_node, target_node, name, is_orphan):
         pass
-
-
-def walk_pdf(pdf_root, adapter, name="Trailer"):
-    registry = {}
-    deferred = []
-    # New: Track backlinks. Mapping: target_objgen -> set((source_id, key_name))
-    backlinks = defaultdict(set)
-
-    # Updated stack: (obj, ui_parent, name, is_kid, nearest_indirect_parent_id)
-    stack = [(pdf_root, None, name, False, "Trailer")]
-
-    while True:
-        while stack:
-            obj, parent_ui, n, is_kid, parent_id = stack.pop()
-            is_ind = getattr(obj, "is_indirect", False)
-            current_obj_id = f"{obj.objgen[0]} {obj.objgen[1]}" if is_ind else parent_id
-
-            # 1. Record the backlink if this is an indirect reference
-            if is_ind:
-                backlinks[obj.objgen].add((parent_id, n))
-
-            # 2. Handle Jumps (Cycles)
-            if is_ind and obj.objgen in registry:
-                adapter.create_jump(parent_ui, registry[obj.objgen], n, obj)
-                continue
-
-            # 3. Handle Deferred Pages
-            obj_type = obj.get("/Type") if isinstance(obj, pikepdf.Dictionary) else None
-            if is_ind and str(obj_type) == "/Page" and not is_kid:
-                ui_handle = adapter.create_deferred(parent_ui, obj, n)
-                deferred.append((ui_handle, obj, n, current_obj_id))  # Pass ID through
-                continue
-
-            # 4. Create Standard Node
-            if isinstance(obj, pikepdf.Dictionary):
-                node_type = "Dictionary"
-            elif isinstance(obj, pikepdf.Array):
-                node_type = "Array"
-            elif isinstance(obj, pikepdf.Stream):
-                node_type = "Stream"
-            else:
-                node_type = type(obj).__name__
-
-            ui_handle = adapter.create_node(parent_ui, obj, n, node_type)
-            if is_ind:
-                registry[obj.objgen] = ui_handle
-
-            # 5. Discovery (Push children to stack)
-            # Pass the current_obj_id down so children know who their indirect ancestor is
-            if isinstance(obj, (pikepdf.Dictionary, pikepdf.Stream)):
-                for key, val in reversed(sorted(obj.items(), key=sort_pdf_keys)):
-                    stack.append((val, ui_handle, str(key), False, current_obj_id))
-            elif isinstance(obj, pikepdf.Array):
-                is_kids_array = n == "/Kids"
-                for i, val in reversed(list(enumerate(obj))):
-                    stack.append(
-                        (val, ui_handle, f"[{i}]", is_kids_array, current_obj_id)
-                    )
-
-        # --- PHASE 2: Orphan Recovery ---
-        found_new_orphans = False
-        current_deferred = deferred[:]
-        deferred.clear()
-
-        for ui_handle, obj, n, p_id in current_deferred:
-            if obj.objgen in registry:
-                adapter.resolve_deferred(
-                    ui_handle, registry[obj.objgen], n, is_orphan=False
-                )
-            else:
-                found_new_orphans = True
-                registry[obj.objgen] = ui_handle
-                adapter.resolve_deferred(ui_handle, obj, n, is_orphan=True)
-                current_id = f"{obj.objgen[0]} {obj.objgen[1]}"
-                for key, val in reversed(sorted(obj.items(), key=sort_pdf_keys)):
-                    stack.append((val, ui_handle, str(key), False, current_id))
-
-        if not found_new_orphans and not stack:
-            break
-
-    # Attach the backlinks to the adapter so the GUI can find them later
-    adapter.backlinks = backlinks
 
 
 def disassemble_content_stream(stream_obj):
@@ -306,3 +224,103 @@ def is_link_with_page(pdf, target_obj, ancestors):
     if is_annot and target_obj.Subtype == pikepdf.Name("/Link"):
         return True, page_idx, rect
     return False, None, None
+
+
+def get_description(obj):
+    """Returns a short string describing the PDF object type and size."""
+    if isinstance(obj, pikepdf.Dictionary):
+        return f"Dict({len(obj)})"
+    if isinstance(obj, pikepdf.Array):
+        return f"Array({len(obj)})"
+    if isinstance(obj, pikepdf.Stream):
+        return "Stream"
+    if isinstance(obj, pikepdf.Name):
+        return str(obj)
+    return str(obj)
+
+
+def prepopulate_spine(pdf, adapter):
+    """Eagerly populates the Trailer, Root, and the Page tree so they are correctly structured and accessible."""
+    trailer_node = adapter.create_node(None, "Trailer", pdf.trailer)
+
+    # Trace the true path down to the Pages tree
+    if "/Root" in pdf.trailer:
+        _force_expand(pdf.trailer, adapter, trailer_node)
+        root_node = _find_child_by_name(adapter, trailer_node, "/Root")
+
+        if root_node and "/Pages" in pdf.trailer.Root:
+            _force_expand(pdf.trailer.Root, adapter, root_node)
+            pages_node = _find_child_by_name(adapter, root_node, "/Pages")
+
+            if pages_node:
+                _eager_load_page_tree(pdf.trailer.Root.Pages, adapter, pages_node)
+
+
+def _force_expand(pdf_obj, adapter, node_iter):
+    """Manually triggers the lazy-load expansion for a specific node exactly as the GUI would."""
+    child_iter = adapter.store.iter_children(node_iter)
+    # If the first child is the placeholder (pdf_obj is None)
+    if child_iter and adapter.store[child_iter][1] is None:
+        adapter.store.remove(child_iter)
+        walk_one_level(pdf_obj, adapter, node_iter)
+
+
+def _find_child_by_name(adapter, parent_iter, name):
+    """Helper to find a child node by its name column (column 3)."""
+    child_iter = adapter.store.iter_children(parent_iter)
+    while child_iter:
+        if adapter.store[child_iter][3] == name:
+            return child_iter
+        child_iter = adapter.store.iter_next(child_iter)
+    return None
+
+
+def _eager_load_page_tree(pdf_obj, adapter, node_iter):
+    """Recursively forces expansion of /Pages dicts and /Kids arrays to register all pages."""
+    _force_expand(pdf_obj, adapter, node_iter)
+
+    if isinstance(pdf_obj, pikepdf.Dictionary):
+        # Find the /Kids array node and expand it
+        kids_node = _find_child_by_name(adapter, node_iter, "/Kids")
+        if kids_node and "/Kids" in pdf_obj:
+            _eager_load_page_tree(pdf_obj.Kids, adapter, kids_node)
+
+    elif isinstance(pdf_obj, pikepdf.Array):
+        # We are iterating a /Kids array. Its children are either /Pages or /Page.
+        child_iter = adapter.store.iter_children(node_iter)
+        i = 0
+        while child_iter:
+            kid_obj = pdf_obj[i]
+            if (
+                isinstance(kid_obj, pikepdf.Dictionary)
+                and kid_obj.get("/Type") == "/Pages"
+            ):
+                # It's an intermediate /Pages tree node, keep expanding!
+                _eager_load_page_tree(kid_obj, adapter, child_iter)
+
+            # If it's a leaf /Page, we do nothing. The fact that walk_one_level created
+            # the row means it is safely in the registry for jumping.
+
+            child_iter = adapter.store.iter_next(child_iter)
+            i += 1
+
+
+def walk_one_level(pdf_obj, adapter, parent_ui):
+    """Populates the immediate children of a node for lazy loading."""
+    if isinstance(pdf_obj, (pikepdf.Dictionary, pikepdf.Stream)):
+        # Apply the sort here! No reversed() needed since we append in-order.
+        for key, val in sorted(pdf_obj.items(), key=sort_pdf_keys):
+            _create_child(str(key), val, adapter, parent_ui)
+
+    elif isinstance(pdf_obj, pikepdf.Array):
+        for i, val in enumerate(pdf_obj):
+            _create_child(f"[{i}]", val, adapter, parent_ui)
+
+
+def _create_child(name, val, adapter, parent_ui):
+    """Helper to decide whether to create a real node or a jump."""
+    is_indirect = getattr(val, "is_indirect", False)
+    if is_indirect and val.objgen in adapter.registry:
+        adapter.create_jump(parent_ui, val.objgen, name, val)
+    else:
+        adapter.create_node(parent_ui, name, val)

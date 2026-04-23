@@ -1,4 +1,8 @@
 import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk  # noqa: E402
+
 import cairo
 from pikepdf.models import PdfImage
 
@@ -6,6 +10,7 @@ gi.require_version("Poppler", "0.18")
 from gi.repository import Gdk, GLib, Poppler, GdkPixbuf
 import os
 import io
+import pikepdf
 
 from .pdf_utils import (
     is_content_stream,
@@ -15,13 +20,9 @@ from .pdf_utils import (
     is_annotation_with_page,
     is_link_with_page,
     JumpReference,
+    walk_one_level,
 )
 from .pdf_operators import ops
-
-import pikepdf
-
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
 
 
 class EventHandler:
@@ -30,6 +31,43 @@ class EventHandler:
         absolute_path = os.path.abspath(os.path.expanduser(self.app.pdf_path))
         uri = GLib.filename_to_uri(absolute_path, None)
         self.poppler_doc = Poppler.Document.new_from_file(uri, None)
+
+    def on_row_expanded(self, tree_view, treeiter, path):
+        """Called when a user clicks the expander arrow."""
+        model = tree_view.get_model()
+        child_iter = model.iter_children(treeiter)
+
+        if child_iter:
+            # Get the PDF object from column 1
+            pdf_obj = model[child_iter][1]
+
+            # The placeholder is the only node where pdf_obj is None
+            if pdf_obj is None:
+                print(f"Lazy loading children for node at {path}...")
+                model.remove(child_iter)
+
+                # Get the actual PDF container from the parent row
+                parent_pdf_obj = model[treeiter][1]
+                if parent_pdf_obj:
+                    # This call populates the real children
+                    walk_one_level(parent_pdf_obj, self.app.adapter, treeiter)
+
+                # Nudge the tree view to ensure the new children are visible
+                tree_view.expand_row(path, False)
+
+    def on_tree_row_activated(self, tree_view, path, column):
+        """Triggered on Double-Click or pressing Enter on a row."""
+        print("activated")
+        model = tree_view.get_model()
+        treeiter = model.get_iter(path)
+        pdf_obj = model[treeiter][1]
+
+        if isinstance(pdf_obj, JumpReference):
+            # Use the universal helper!
+            if not self.app.navigate_to_objgen(pdf_obj.objgen):
+                print(f"Jump failed: Object {pdf_obj.objgen} not found in registry")
+        else:
+            print(f"Not a JumpReference {str(pdf_obj)[:100]}")
 
     def on_tree_right_click(self, widget, event):
         """Intercepts right-clicks on the tree to show the context menu."""
@@ -43,23 +81,6 @@ class EventHandler:
                 self.app.context_menu.popup_at_pointer(event)
                 return True
         return False
-
-    def on_tree_row_activated(self, tree_view, path, column):
-        """Triggered on Double-Click or pressing Enter on a row."""
-        model = tree_view.get_model()
-        pdf_obj = model[path][1]
-
-        if isinstance(pdf_obj, JumpReference) and pdf_obj.target_node is not None:
-            # The target is the saved TreePath
-            target_path = pdf_obj.target_node
-
-            # Jump to it!
-            self.app.tree_view.expand_to_path(target_path)
-            self.app.tree_view.set_cursor(target_path, None, False)
-            self.app.tree_view.scroll_to_cell(target_path, None, True, 0.5, 0.0)
-
-            # Optional UX touch: momentarily flash the row or keep focus
-            self.app.tree_view.grab_focus()
 
     def on_tree_key_press(self, widget, event):
         keyname = Gdk.keyval_name(event.keyval)
@@ -185,7 +206,11 @@ class EventHandler:
         meta_text = f"Type: {type(pdf_obj).__name__}\nRepr: {str(pdf_obj)[:200]}"
 
         # Add Backlinks Logic
-        if hasattr(pdf_obj, "objgen") and pdf_obj.is_indirect:
+        if (
+            hasattr(pdf_obj, "objgen")
+            and isinstance(pdf_obj, pikepdf.Object)
+            and pdf_obj.is_indirect
+        ):
             links = self.app.adapter.backlinks.get(pdf_obj.objgen, [])
             if links:
                 meta_text += f"\n--- Referenced By ({len(links)}) ---\n"
@@ -200,7 +225,7 @@ class EventHandler:
 
         target_obj = pdf_obj
         if isinstance(target_obj, JumpReference):
-            target_obj = target_obj.pdf_obj
+            target_obj = self.app.pdf.get_object(target_obj.objgen)
         # Check if the selected object is a Font
         is_font, font_page_idx = is_font_with_page(self.app.pdf, target_obj, ancestors)
         is_page, page_idx = is_page_with_index(self.app.pdf, target_obj)
