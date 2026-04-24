@@ -100,8 +100,8 @@ class GtkAdapter(TreeAdapter):
 
     def create_jump(self, parent_iter, objgen, name, pdf_obj):
         """Creates a 'Jump' node with blue italics and gold reference."""
-        markup = f"<span color='#729fcf'><i>↪ {name}</i></span> <span color='#c4a000'>(Ref to {objgen[0]} {objgen[1]})</span>"
-        raw_text = f"↪ {name} jump {objgen}"
+        markup = f"<span color='#729fcf'><i>↪ {name}</i></span> <span color='#c4a000'>(Ref to {objgen[0]}:{objgen[1]})</span>"
+        raw_text = f"↪ {name} jump {objgen} (Ref to {objgen[0]}:{objgen[1]})"
         self.store.append(parent_iter, [markup, JumpReference(objgen), raw_text, name])
 
     def has_placeholder(self, node_iter):

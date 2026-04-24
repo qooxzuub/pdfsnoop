@@ -1,3 +1,7 @@
+import gi
+
+gi.require_version("Gtk", "3.0")
+
 import pytest
 from unittest.mock import MagicMock, patch
 import pikepdf
@@ -8,6 +12,7 @@ from pdfsnoop.search import (
     _iter_visible_nodes,
     _build_resume_stack,
     iter_pdf_for_search,
+    _find_existing_child,
 )
 
 
@@ -233,3 +238,132 @@ def test_search_complex_graph_with_cycles(app):
     # If this doesn't hang and correctly identifies the 'Jump' node,
     # your deduplication logic is verified.
     assert len(results) > 0
+
+
+# ---------------------------------------------------------------------------
+# Fixtures & Mocks
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def store():
+    """
+    Creates a headless Gtk.TreeStore matching the expected column layout.
+    Based on search.py, the columns accessed are:
+    Col 1: Actual Object
+    Col 2: Raw Search Text
+    Col 3: Name/Key
+    """
+    # Col 0: Label, Col 1: Obj, Col 2: RawText, Col 3: Name
+    return Gtk.TreeStore(str, object, str, str)
+
+
+class MockAdapter:
+    """Mock TreeAdapter to bypass GUI placeholder logic."""
+
+    def __init__(self, store):
+        self.store = store
+
+    def has_placeholder(self, iter_):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_existing_child(store):
+    root = store.append(None, ["RootLabel", None, "RootText", "RootName"])
+    store.append(root, ["A_Label", None, "A_Text", "/A"])
+    store.append(root, ["B_Label", None, "B_Text", "/B"])
+
+    # Should find the exact child by name in column 3
+    match = _find_existing_child(store, root, "/B")
+    assert match is not None
+    assert store[match][3] == "/B"
+
+    # Should return None for missing children
+    miss = _find_existing_child(store, root, "/Missing")
+    assert miss is None
+
+
+def test_iter_visible_nodes_no_cursor(store):
+    root = store.append(None, ["Root", object(), "raw_root", "Trailer"])
+    store.append(root, ["A", object(), "raw_a", "/A"])
+    b = store.append(root, ["B", object(), "raw_b", "/B"])
+    store.append(b, ["B1", object(), "raw_b1", "[0]"])
+
+    # Walk without cursor should just yield standard depth-first
+    results = list(_iter_visible_nodes(store, cursor_path=None))
+
+    # Results are (raw_text, path)
+    texts = [r[0] for r in results]
+    assert texts == ["raw_root", "raw_a", "raw_b", "raw_b1"]
+
+
+def test_iter_visible_nodes_with_cursor_wraparound(store):
+    root = store.append(None, ["Root", object(), "raw_root", "Trailer"])
+    store.append(root, ["A", object(), "raw_a", "/A"])
+    b = store.append(root, ["B", object(), "raw_b", "/B"])
+    store.append(b, ["B1", object(), "raw_b1", "[0]"])
+    store.append(root, ["C", object(), "raw_c", "/C"])
+
+    # Set cursor path to B
+    cursor_path = store.get_path(b)
+
+    results = list(_iter_visible_nodes(store, cursor_path=cursor_path))
+    texts = [r[0] for r in results]
+
+    # It should split: Everything >= cursor (B, B1, C) first, then wrapped (Root, A)
+    assert texts == ["raw_b", "raw_b1", "raw_c", "raw_root", "raw_a"]
+
+
+def test_build_resume_stack_dictionary(store):
+    """Test that the generator stack builds in the correct LIFO order for Dicts."""
+    obj = pikepdf.Dictionary({"/A": 1, "/B": 2, "/C": 3})
+    adapter = MockAdapter(store)
+
+    root = store.append(None, ["Root", obj, "raw_root", "Trailer"])
+    # Pretend the user's cursor is currently on /B
+    cursor_node = store.append(root, ["B", 2, "raw_b", "/B"])
+    cursor_path = store.get_path(cursor_node)
+
+    stack = _build_resume_stack(None, cursor_path, adapter)
+
+    # The stack is LIFO.
+    # Expected pop order: Cursor (/B), then Next (/C), then Wrap-around (/A)
+    # Therefore, the internal list should be ordered: ["/A", "/C", "/B"]
+    names_in_stack = [item[2] for item in stack]
+    assert names_in_stack == ["/A", "/C", "/B"]
+
+    # Verify getters actually return the right values
+    popped_b = stack.pop()
+    assert popped_b[2] == "/B"
+    assert popped_b[0]() == 2  # The lambda getter
+
+    popped_c = stack.pop()
+    assert popped_c[2] == "/C"
+    assert popped_c[0]() == 3
+
+    popped_a = stack.pop()
+    assert popped_a[2] == "/A"
+    assert popped_a[0]() == 1
+
+
+def test_build_resume_stack_array(store):
+    """Test that the generator stack builds in the correct LIFO order for Arrays."""
+    obj = pikepdf.Array([10, 20, 30])
+    adapter = MockAdapter(store)
+
+    root = store.append(None, ["Root", obj, "raw_root", "Trailer"])
+    # Pretend cursor is on the middle element: index 1
+    cursor_node = store.append(root, ["Idx1", 20, "raw_1", "[1]"])
+    cursor_path = store.get_path(cursor_node)
+
+    stack = _build_resume_stack(None, cursor_path, adapter)
+
+    # Iterating an array forward: [1], then [2], then wrap to [0]
+    # LIFO stack order: ["[0]", "[2]", "[1]"]
+    names_in_stack = [item[2] for item in stack]
+    assert names_in_stack == ["[0]", "[2]", "[1]"]

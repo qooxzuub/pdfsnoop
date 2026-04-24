@@ -224,25 +224,114 @@ def _build_resume_stack(pdf_root, cursor_path, adapter):
     return stack
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 Search Helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_visited_duplicate(
+    obj, is_ind, parent_ref, name, parent_id, adapter, visited_direct
+):
+    """1. Basic deduplication for search traversal."""
+    if is_ind:
+        adapter.backlinks[obj.objgen].add((parent_id, name))
+        return False
+    else:
+        p_str = (
+            str(parent_ref.get_path()) if parent_ref and parent_ref.valid() else "None"
+        )
+        if (p_str, name) in visited_direct:
+            return True
+        visited_direct.add((p_str, name))
+        return False
+
+
+def _handle_root_node(
+    obj, is_ind, current_id, store, visited_indirect, push_children_cb
+):
+    """2. Process the root node, optionally pushing its children."""
+    ui_node = store.get_iter_first()
+    if ui_node is None:
+        return None
+
+    node_ref = Gtk.TreeRowReference.new(store, store.get_path(ui_node))
+
+    should_push = True
+    if is_ind:
+        if obj.objgen in visited_indirect:
+            should_push = False
+        else:
+            visited_indirect.add(obj.objgen)
+
+    if should_push:
+        push_children_cb(obj, node_ref, current_id)
+
+    return store[ui_node][2], node_ref
+
+
+def _locate_or_create_ui_node(store, adapter, parent_ref, parent_ui, name, obj, is_ind):
+    """3. Locate or create the UI node for this specific parent/key."""
+    ui_node = _find_existing_child(store, parent_ui, name)
+
+    if ui_node is not None:
+        return ui_node
+
+    # Node doesn't exist here yet — we MUST create it
+    if adapter.has_placeholder(parent_ui):
+        adapter.remove_placeholder(parent_ui)
+        if not parent_ref.valid():
+            return None
+        parent_ui = store.get_iter(parent_ref.get_path())
+
+    if is_ind and obj.objgen in adapter.registry:
+        # Case: Indirect object seen before elsewhere -> Create Jump here
+        adapter.create_jump(parent_ui, obj.objgen, name, obj)
+        ui_node = _find_existing_child(store, parent_ui, name)
+    else:
+        # Case: New object or direct object -> Create Real node
+        ui_node = adapter.create_node(parent_ui, name, obj)
+        if is_ind and ui_node:
+            # Register this as the "Master" copy for future encounters
+            path = store.get_path(ui_node)
+            adapter.registry[obj.objgen] = Gtk.TreeRowReference.new(store, path)
+
+    return ui_node
+
+
+def _prepare_descent(store, adapter, ui_node, obj, is_ind, visited_indirect):
+    """5. Descent Logic (Determine if we should look inside this object)."""
+    stored_obj = store[ui_node][1]
+
+    # Don't descend into Jump nodes (they are leaf nodes pointing elsewhere)
+    if isinstance(stored_obj, JumpReference):
+        return False
+
+    if is_ind:
+        # Don't re-descend an indirect object we've already walked in this search pass
+        if obj.objgen in visited_indirect:
+            return False
+        visited_indirect.add(obj.objgen)
+
+        # If this master node was just lazy-loaded, ensure its children placeholders exist
+        if adapter.has_placeholder(ui_node):
+            adapter.remove_placeholder(ui_node)
+            walk_one_level(obj, adapter, ui_node)
+
+    return True
+
+
 def iter_pdf_for_search(pdf_root, adapter, start_path=None):
     """
     Generator that walks the PDF object graph, starting from start_path and
     wrapping around. Populates un-visited nodes into the GTK store as it goes.
-
-    Yields (raw_text, TreeRowReference) for every node.
-    Jump nodes are yielded but not descended into.
-    Already-loaded nodes are cheap (no GTK insertion, just a store lookup).
-
-    Deduplication:
-      - Indirect objects: tracked via visited_indirect set (objgen tuples)
-      - Direct objects: tracked via visited_direct set (parent_path_str, name)
     """
     store = adapter.store
+    stack = _build_resume_stack(pdf_root, start_path, adapter)
+    visited_indirect = set()  # objgen tuples
+    visited_direct = set()  # (parent_path_str, name)
 
     def to_iter(ref):
-        if ref is None:
-            return None
-        if not ref.valid():
+        if ref is None or not ref.valid():
             return None
         return store.get_iter(ref.get_path())
 
@@ -258,10 +347,9 @@ def iter_pdf_for_search(pdf_root, adapter, start_path=None):
                     (lambda arr=obj, idx=i: arr[idx], node_ref, f"[{i}]", current_id)
                 )
 
-    stack = _build_resume_stack(pdf_root, start_path, adapter)
-    visited_indirect = set()  # objgen tuples — prevents re-descending same object
-    visited_direct = set()  # (parent_path_str, name) — prevents duplicate direct nodes
-
+    # -----------------------------------------------------------------------
+    # Orchestrator Loop
+    # -----------------------------------------------------------------------
     while stack:
         getter, parent_ref, name, parent_id = stack.pop()
         obj = getter()
@@ -269,114 +357,39 @@ def iter_pdf_for_search(pdf_root, adapter, start_path=None):
         is_ind = getattr(obj, "is_indirect", False)
         current_id = f"{obj.objgen[0]} {obj.objgen[1]}" if is_ind else parent_id
 
-        if is_ind:
-            adapter.backlinks[obj.objgen].add((parent_id, name))
-        else:
-            p_str = (
-                str(parent_ref.get_path())
-                if parent_ref and parent_ref.valid()
-                else "None"
-            )
-            direct_key = (p_str, name)
-            if direct_key in visited_direct:
-                continue
-            visited_direct.add(direct_key)
+        # 1. Basic deduplication for search traversal
+        if _is_visited_duplicate(
+            obj, is_ind, parent_ref, name, parent_id, adapter, visited_direct
+        ):
+            continue
 
-        # --- Locate or create the UI node ---
-
+        # 2. Root Handling
         if parent_ref is None:
-            # Trailer root
-            ui_node = store.get_iter_first()
-            if ui_node is None:
-                continue
-            node_ref = Gtk.TreeRowReference.new(store, store.get_path(ui_node))
-            yield store[ui_node][2], node_ref
-            if obj.objgen not in visited_indirect if is_ind else True:
-                if is_ind:
-                    visited_indirect.add(obj.objgen)
-                push_children(obj, node_ref, current_id)
+            root_match = _handle_root_node(
+                obj, is_ind, current_id, store, visited_indirect, push_children
+            )
+            if root_match:
+                yield root_match
             continue
 
         parent_ui = to_iter(parent_ref)
         if parent_ui is None:
             continue
 
-        # Remove placeholder before looking for children
-        if adapter.has_placeholder(parent_ui):
-            adapter.remove_placeholder(parent_ui)
-            # Re-fetch parent after store modification
-            parent_ui = to_iter(parent_ref)
-            if parent_ui is None:
-                continue
-
-        if is_ind and obj.objgen in adapter.registry:
-            # Already registered — reuse existing node
-            ref = adapter.registry[obj.objgen]
-            if not ref.valid():
-                continue
-            ui_node = store.get_iter(ref.get_path())
-            node_ref = ref
-            yield store[ui_node][2], node_ref
-
-            if obj.objgen in visited_indirect:
-                continue  # already descended, don't push children again
-            visited_indirect.add(obj.objgen)
-
-            stored = store[ui_node][1]
-            if isinstance(stored, JumpReference):
-                continue
-
-            # Populate placeholder if needed
-            if adapter.has_placeholder(ui_node):
-                adapter.remove_placeholder(ui_node)
-                walk_one_level(obj, adapter, ui_node)
-                # node_ref is a TreeRowReference so it stays valid after modification
-
-            push_children(obj, node_ref, current_id)
+        # 3. Locate or Create the UI node for THIS specific parent/key
+        ui_node = _locate_or_create_ui_node(
+            store, adapter, parent_ref, parent_ui, name, obj, is_ind
+        )
+        if ui_node is None:
             continue
 
-        # Not in registry — find existing child or create new node
-        ui_node = _find_existing_child(store, parent_ui, name)
-
-        if ui_node is not None:
-            stored = store[ui_node][1]
-            if isinstance(stored, JumpReference):
-                node_ref = Gtk.TreeRowReference.new(store, store.get_path(ui_node))
-                yield store[ui_node][2], node_ref
-                continue
-        else:
-            # Genuinely new node
-            if is_ind and obj.objgen in adapter.registry:
-                # Registered elsewhere — create a jump node here
-                adapter.create_jump(parent_ui, obj.objgen, name, obj)
-                # find the jump node we just created
-                ui_node = _find_existing_child(store, parent_ui, name)
-                if ui_node is None:
-                    continue
-                node_ref = Gtk.TreeRowReference.new(store, store.get_path(ui_node))
-                yield store[ui_node][2], node_ref
-                continue
-            else:
-                ui_node = adapter.create_node(parent_ui, name, obj)
-                if ui_node is None:
-                    continue
-                if is_ind:
-                    path = store.get_path(ui_node)
-                    adapter.registry[obj.objgen] = Gtk.TreeRowReference.new(store, path)
-
+        # 4. Yield the match
         node_ref = Gtk.TreeRowReference.new(store, store.get_path(ui_node))
         yield store[ui_node][2], node_ref
 
-        stored = store[ui_node][1]
-        if isinstance(stored, JumpReference):
-            continue
-
-        if is_ind:
-            if obj.objgen in visited_indirect:
-                continue
-            visited_indirect.add(obj.objgen)
-
-        push_children(obj, node_ref, current_id)
+        # 5. Descent Logic (Should we look inside this object?)
+        if _prepare_descent(store, adapter, ui_node, obj, is_ind, visited_indirect):
+            push_children(obj, node_ref, current_id)
 
 
 # ---------------------------------------------------------------------------
