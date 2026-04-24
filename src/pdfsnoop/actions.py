@@ -1,13 +1,15 @@
-import os
 import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk  # noqa: E402
+import os
 import subprocess
 import shlex
 import tempfile
 
 import pikepdf
 
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from .pdf_utils import _infer_type, _parse_value
 
 
 class ActionHandler:
@@ -302,11 +304,108 @@ class ActionHandler:
         dialog.destroy()
 
     def action_edit(self, widget):
+        """Edit stream OR show inline edit bar for scalars."""
+        model, treeiter = self.app.tree_view.get_selection().get_selected()
+        if not treeiter:
+            return
+        pdf_obj = model[treeiter][1]
+
+        # Stream editing — existing behaviour
+        if isinstance(pdf_obj, pikepdf.Stream):
+            self._action_edit_stream(pdf_obj)
+            return
+
+        # Scalar editing — show the edit bar
+        type_name = _infer_type(pdf_obj)
+        if type_name is None:
+            self._show_error(
+                "Not Editable",
+                "Select a scalar value (string, name, integer, real, boolean, or indirect ref).",
+            )
+            return
+
+        self._show_edit_bar(pdf_obj, type_name)
+
+    def _show_edit_bar(self, pdf_obj, type_name):
+        """Populate and show the inline edit bar."""
+        combo = self.app.edit_type_combo
+        entry = self.app.edit_entry
+
+        # Set type
+        types = ["String", "Name", "Integer", "Real", "Boolean", "Indirect Ref"]
+        combo.set_active(types.index(type_name))
+
+        # Set current value
+        if type_name == "Name":
+            entry.set_text(str(pdf_obj))
+        elif type_name == "String":
+            from .pdf_utils import format_pdf_string
+
+            entry.set_text(format_pdf_string(pdf_obj))
+        elif type_name == "Indirect Ref":
+            entry.set_text(f"{pdf_obj.objgen[0]} {pdf_obj.objgen[1]}")
+        else:
+            entry.set_text(str(pdf_obj))
+
+        self.app.edit_bar.show()
+        entry.grab_focus()
+        entry.select_region(0, -1)  # select all for easy overtype
+
+    def action_commit_edit(self, widget):
+        """Parse the edit bar value and write it back to the PDF object."""
+        model, treeiter = self.app.tree_view.get_selection().get_selected()
+        if not treeiter:
+            return
+
+        type_name = self.app.edit_type_combo.get_active_text()
+        text = self.app.edit_entry.get_text()
+
+        try:
+            new_value = _parse_value(type_name, text, self.app.pdf)
+        except (ValueError, Exception) as e:
+            self._show_error("Parse Error", str(e))
+            return
+
+        # Write back to parent pikepdf object
+        parent_iter = model.iter_parent(treeiter)
+        if parent_iter is None:
+            self._show_error("Edit Failed", "Cannot edit the root node.")
+            return
+
+        parent_obj = model[parent_iter][1]
+        key = model[treeiter][3]
+
+        try:
+            if isinstance(parent_obj, pikepdf.Dictionary):
+                parent_obj[key] = new_value
+            elif isinstance(parent_obj, pikepdf.Array):
+                parent_obj[int(key.strip("[]"))] = new_value
+            else:
+                self._show_error("Edit Failed", "Parent is not a dictionary or array.")
+                return
+        except Exception as e:
+            self._show_error("Edit Failed", str(e))
+            return
+
+        # Update the store node's display
+
+        is_ind = getattr(new_value, "is_indirect", False)
+        markup, raw_text = self.app.adapter._get_markup_etc(new_value, key, is_ind)
+        model.set_value(treeiter, 0, markup)
+        model.set_value(treeiter, 1, new_value)
+        model.set_value(treeiter, 2, raw_text)
+
+        self.action_cancel_edit(None)  # hide bar
+
+    def action_cancel_edit(self, widget):
+        self.app.edit_bar.hide()
+        self.app.tree_view.grab_focus()
+
+    def _action_edit_stream(self, obj):
         """Dumps stream to a temp file, opens in $EDITOR, and writes back on close."""
-        obj = self.get_selected_pdf_obj()
         if not isinstance(obj, pikepdf.Stream):
             self._show_error(
-                "Invalid Selection", "Currently, only Stream editing is supported."
+                "Invalid Selection", "This method only supports Stream editing."
             )
             return
 

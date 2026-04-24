@@ -80,10 +80,16 @@ class EventHandler:
                 return True
         return False
 
+    def on_edit_entry_key_press(self, widget, event):
+        if Gdk.keyval_name(event.keyval) == "Escape":
+            self.app.actions.action_cancel_edit(None)
+            return True
+        return False
+
     def on_tree_key_press(self, widget, event):
+        keyname = Gdk.keyval_name(event.keyval)
         if self._handle_search_shortcut(event):
             return True
-        keyname = Gdk.keyval_name(event.keyval)
         if self._handle_action_shortcut(event, keyname):
             return True
         return self._handle_navigation_shortcut(event, keyname)
@@ -181,6 +187,7 @@ class EventHandler:
 
         # 1. Clear status bar
         self.app.statusbar.pop(0)
+        self.app.edit_bar.hide()
 
         target_obj = pdf_obj
         if isinstance(target_obj, JumpReference):
@@ -237,7 +244,6 @@ class EventHandler:
         ):
             return ""
         links = self.app.adapter.backlinks.get(pdf_obj.objgen, [])
-        print(links)
         if not links:
             return ""
         return f"\n--- Referenced By ({len(links)}) ---\n" + "".join(

@@ -67,7 +67,37 @@ class PDFSnoopGUI(Gtk.Window):
         self.search_entry = Gtk.SearchEntry()
         self.search_bar.connect_entry(self.search_entry)
         self.search_bar.add(self.search_entry)
+
+        # Edit Bar (hidden by default)
+        self.edit_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.edit_bar.set_margin_start(4)
+        self.edit_bar.set_margin_end(4)
+        self.edit_bar.set_margin_top(2)
+        self.edit_bar.set_margin_bottom(2)
+
+        self.edit_type_combo = Gtk.ComboBoxText()
+        for t in ("String", "Name", "Integer", "Real", "Boolean", "Indirect Ref"):
+            self.edit_type_combo.append_text(t)
+
+        self.edit_entry = Gtk.Entry()
+        self.edit_entry.set_hexpand(True)
+
+        edit_save_btn = Gtk.Button(label="Save")
+        edit_cancel_btn = Gtk.Button(label="Cancel")
+
+        self.edit_bar.pack_start(self.edit_type_combo, False, False, 0)
+        self.edit_bar.pack_start(self.edit_entry, True, True, 0)
+        self.edit_bar.pack_start(edit_save_btn, False, False, 0)
+        self.edit_bar.pack_start(edit_cancel_btn, False, False, 0)
+
+        left_vbox.pack_end(self.edit_bar, False, False, 0)
         left_vbox.pack_end(self.search_bar, False, False, 0)
+
+        # Connections
+        self.edit_entry.connect("activate", self.actions.action_commit_edit)
+        self.edit_entry.connect("key-press-event", self.events.on_edit_entry_key_press)
+        edit_save_btn.connect("clicked", self.actions.action_commit_edit)
+        edit_cancel_btn.connect("clicked", self.actions.action_cancel_edit)
 
         self.paned.pack1(left_vbox, True, False)
         self.paned.set_position(400)
@@ -150,6 +180,7 @@ class PDFSnoopGUI(Gtk.Window):
         self.main_vbox.pack_end(self.statusbar, False, False, 0)
 
         self.show_all()
+        self.edit_bar.hide()
 
         self.actions.expand_to_pages()
 

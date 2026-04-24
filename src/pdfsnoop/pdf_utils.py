@@ -5,6 +5,7 @@ gi.require_version("Gtk", "3.0")
 import unicodedata
 
 
+import decimal
 import pikepdf
 
 from .pdf_operators import ops
@@ -297,3 +298,44 @@ def _create_child(name, val, adapter, parent_ui):
         adapter.create_jump(parent_ui, val.objgen, name, val)
     else:
         adapter.create_node(parent_ui, name, val)
+
+
+def _infer_type(pdf_obj):
+    if isinstance(pdf_obj, bool):
+        return "Boolean"
+    if isinstance(pdf_obj, decimal.Decimal):
+        return "Real"
+    if isinstance(pdf_obj, int):
+        return "Integer"
+    if isinstance(pdf_obj, pikepdf.Name):
+        return "Name"
+    if isinstance(pdf_obj, pikepdf.String):
+        return "String"
+    if getattr(pdf_obj, "is_indirect", False):
+        return "Indirect Ref"
+    return None  # not an editable scalar
+
+
+def _parse_value(type_name, text, pdf=None):
+    text = text.strip()
+    if type_name == "String":
+        return pikepdf.String(text)
+    elif type_name == "Name":
+        return pikepdf.Name(text if text.startswith("/") else "/" + text)
+    elif type_name == "Integer":
+        return pikepdf.Integer(int(text))
+    elif type_name == "Real":
+        return pikepdf.Real(decimal.Decimal(text))
+    elif type_name == "Boolean":
+        return pikepdf.Boolean(text.lower() in ("true", "1", "yes"))
+    elif type_name == "Indirect Ref":
+        if pdf is None:
+            raise ValueError("Need a PDF file to resolve an indirect reference")
+        parts = text.strip().split()
+        if len(parts) == 2:
+            found_obj = pdf.get_object(int(parts[0]), int(parts[1]))
+            if found_obj is None:
+                raise ValueError(f"Object '{parts[0]} {parts[1]}' not found")
+            return found_obj
+        raise ValueError(f"Expected 'num gen' format, got: {text!r}")
+    raise ValueError(f"Unknown type: {type_name}")
