@@ -71,10 +71,9 @@ class GtkAdapter(TreeAdapter):
         """Creates a standard node with restored color scheme."""
 
         # Color Logic: Blue keys, Gold object IDs, Gray metadata
-        obj_info = ""
         is_ind = getattr(pdf_obj, "is_indirect", False)
         if is_ind:
-            obj_info = f" <span color='#c4a000'>({pdf_obj.objgen[0]} {pdf_obj.objgen[1]} obj)</span>"
+            f" <span color='#c4a000'>({pdf_obj.objgen[0]} {pdf_obj.objgen[1]} obj)</span>"
 
         # Restore the colors: Blue for name, Gray for description
         # markup = f"<span color='#729fcf'><b>{name}</b></span>{obj_info} <span color='#888a85'>{description}</span>"
