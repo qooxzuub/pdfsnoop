@@ -10,32 +10,32 @@ import pikepdf
 from .pdf_operators import ops
 
 
-def is_content_stream(stream: pikepdf.Stream, name: str, parent_name: str = "") -> bool:
-    # Fast exit: image codecs mean raw pixel data
+def _has_image_filter(stream):
     image_filters = {"/DCTDecode", "/JPXDecode", "/CCITTFaxDecode", "/JBIG2Decode"}
     filters = stream.get("/Filter")
-    if filters is not None:
-        filter_list = (
-            [str(filters)]
-            if not isinstance(filters, pikepdf.Array)
-            else [str(f) for f in filters]
-        )
-        if any(f in image_filters for f in filter_list):
-            return False
+    if filters is None:
+        return False
+    filter_list = (
+        [str(filters)]
+        if not isinstance(filters, pikepdf.Array)
+        else [str(f) for f in filters]
+    )
+    return any(f in image_filters for f in filter_list)
 
+
+def is_content_stream(stream, name, parent_name=""):
+    if _has_image_filter(stream):
+        return False
     obj_type = str(stream.get("/Type", ""))
     obj_subtype = str(stream.get("/Subtype", ""))
-
     if name == "/Contents" or parent_name == "/Contents":
         return True
-    if obj_type == "/Pattern":  # PatternType 1 tiling patterns
+    if obj_type == "/Pattern":
         return True
     if obj_type == "/XObject" and obj_subtype == "/Form":
         return True
-    # Appearance streams have no /Type but are content streams
     if name in ("/N", "/R", "/D") and obj_type == "":
-        return True  # heuristic — could false-positive on other anonymous streams
-
+        return True
     return False
 
 

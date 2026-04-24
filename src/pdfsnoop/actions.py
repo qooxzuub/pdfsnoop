@@ -210,34 +210,34 @@ class ActionHandler:
     def expand_to_pages(self):
         """Recursively search the TreeStore for the /Pages dictionary and expand to it."""
 
-        def search_for_pages(tree_iter):
-            while tree_iter:
-                pdf_obj = self.app.store[tree_iter][1]
-
-                # Check if this node is a Dictionary and its /Type is /Pages
-                if isinstance(pdf_obj, pikepdf.Dictionary):
-                    if str(pdf_obj.get("/Type", "")) == "/Pages":
-                        return self.app.store.get_path(tree_iter)
-
-                # Recurse into children
-                if self.app.store.iter_has_child(tree_iter):
-                    child_iter = self.app.store.iter_children(tree_iter)
-                    result = search_for_pages(child_iter)
-                    if result:
-                        return result
-
-                tree_iter = self.app.store.iter_next(tree_iter)
-            return None
-
         # Start search from the root (Trailer)
         first_iter = self.app.store.get_iter_first()
-        pages_path = search_for_pages(first_iter)
+        pages_path = self.search_for_pages(first_iter)
 
         if pages_path:
             self.app.tree_view.expand_to_path(pages_path)
             self.app.tree_view.set_cursor(pages_path, None, False)
             # Scroll so the /Pages node is exactly in the middle of the screen
             self.app.tree_view.scroll_to_cell(pages_path, None, True, 0.5, 0.0)
+
+    def search_for_pages(self, tree_iter):
+        while tree_iter:
+            pdf_obj = self.app.store[tree_iter][1]
+
+            # Check if this node is a Dictionary and its /Type is /Pages
+            if isinstance(pdf_obj, pikepdf.Dictionary):
+                if str(pdf_obj.get("/Type", "")) == "/Pages":
+                    return self.app.store.get_path(tree_iter)
+
+            # Recurse into children
+            if self.app.store.iter_has_child(tree_iter):
+                child_iter = self.app.store.iter_children(tree_iter)
+                result = self.search_for_pages(child_iter)
+                if result:
+                    return result
+
+            tree_iter = self.app.store.iter_next(tree_iter)
+        return None
 
     def action_extract(self, widget):
         """Extracts the selected Stream or Image to a file."""

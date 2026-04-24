@@ -81,7 +81,14 @@ class EventHandler:
         return False
 
     def on_tree_key_press(self, widget, event):
+        if self._handle_search_shortcut(event):
+            return True
         keyname = Gdk.keyval_name(event.keyval)
+        if self._handle_action_shortcut(event, keyname):
+            return True
+        return self._handle_navigation_shortcut(event, keyname)
+
+    def _handle_search_shortcut(self, event):
         # 1. Search shortcut (Ctrl+F)
         if (
             (event.state & Gdk.ModifierType.CONTROL_MASK)
@@ -96,7 +103,8 @@ class EventHandler:
             self.app.search_entry.grab_focus()
             return True
 
-        # 2. Map single-key shortcuts directly to our action functions
+    def _handle_action_shortcut(self, event, keyname):
+        # Map single-key shortcuts directly to our action functions
         if keyname == "q":
             Gtk.main_quit()
         elif keyname == "w":
@@ -111,14 +119,17 @@ class EventHandler:
             self.app.actions.action_jump_page(None)
         elif keyname == "Delete":
             self.app.actions.action_delete(None)
+        else:
+            return False
+        return True
 
-        # 3. Arrow Key navigation
+    def _handle_navigation_shortcut(self, event, keyname):
+        # Arrow Key navigation
         if event.keyval == Gdk.KEY_Right or keyname == "l":
             path, col = self.app.tree_view.get_cursor()
             if path:
                 self.app.tree_view.expand_row(path, False)
                 return True
-
         elif event.keyval == Gdk.KEY_Left or keyname == "h":
             path, col = self.app.tree_view.get_cursor()
             if path:
@@ -127,15 +138,12 @@ class EventHandler:
                 elif len(path) > 1:
                     self.app.tree_view.set_cursor(path[:-1], None, False)
                 return True
-
         elif keyname == "j":
             self.app.tree_view.emit("move-cursor", Gtk.MovementStep.DISPLAY_LINES, 1)
             return True
-
         elif keyname == "k":
             self.app.tree_view.emit("move-cursor", Gtk.MovementStep.DISPLAY_LINES, -1)
             return True
-
         return False
 
     def on_search_changed(self, entry):
@@ -156,17 +164,7 @@ class EventHandler:
             return
 
         # 1. Update Breadcrumbs and get ancestors
-        ancestors = []
-        path_names = []
-        curr_iter = treeiter
-        while curr_iter:
-            path_names.insert(0, model[curr_iter][3])  # Get 'name' from col 3
-            ancestors.append(model[curr_iter][1])
-            curr_iter = model.iter_parent(curr_iter)
-        self.app.breadcrumb_label.set_markup(
-            '<b>Path:</b><span color="gray">' + " &gt; ".join(path_names) + "</span>"
-        )
-
+        ancestors = self._update_breadcrumbs_get_ancestors(treeiter, model)
         # 2. Update Details vs Content Split
         pdf_obj = model[treeiter][1]
         name = model[treeiter][3]
@@ -176,16 +174,7 @@ class EventHandler:
         meta_text = f"Type: {type(pdf_obj).__name__}\nRepr: {str(pdf_obj)[:200]}"
 
         # Add Backlinks Logic
-        if (
-            hasattr(pdf_obj, "objgen")
-            and isinstance(pdf_obj, pikepdf.Object)
-            and pdf_obj.is_indirect
-        ):
-            links = self.app.adapter.backlinks.get(pdf_obj.objgen, [])
-            if links:
-                meta_text += f"\n--- Referenced By ({len(links)}) ---\n"
-                for source_id, key in sorted(links):
-                    meta_text += f"• {source_id} via {key}\n"
+        meta_text += self._backlinks_info(pdf_obj)
 
         meta_buf.set_text(meta_text)
         content_buf.set_text("")  # Clear content by default
@@ -207,16 +196,10 @@ class EventHandler:
         )
 
         if is_font:
-            # We need to know WHICH page to render.
-            # For now, let's assume the user is looking at the last viewed page,
-            # or default to page 0.
             target_font_name = str(target_obj.BaseFont)  # e.g., "/ABCDEF+Arial"
-
             self.app.statusbar.push(
                 0, f"Highlighting font: {target_font_name} on page {font_page_idx + 1}"
             )
-
-            # Call a new render method
             rotation = self.app.pdf.pages[font_page_idx].get("/Rotate", 0) % 360
             self._render_page_with_highlight(font_page_idx, target_font_name, rotation)
             self.app.content_stack.set_visible_child_name("image")
@@ -245,6 +228,34 @@ class EventHandler:
             )
 
             self.app.content_stack.set_visible_child_name("text")
+
+    def _backlinks_info(self, pdf_obj):
+        if not (
+            hasattr(pdf_obj, "objgen")
+            and isinstance(pdf_obj, pikepdf.Object)
+            and pdf_obj.is_indirect
+        ):
+            return ""
+        links = self.app.adapter.backlinks.get(pdf_obj.objgen, [])
+        print(links)
+        if not links:
+            return ""
+        return f"\n--- Referenced By ({len(links)}) ---\n" + "".join(
+            [f"• {source_id} via {key}\n" for source_id, key in sorted(links)]
+        )
+
+    def _update_breadcrumbs_get_ancestors(self, treeiter, model):
+        ancestors = []
+        path_names = []
+        curr_iter = treeiter
+        while curr_iter:
+            path_names.insert(0, model[curr_iter][3])  # Get 'name' from col 3
+            ancestors.append(model[curr_iter][1])
+            curr_iter = model.iter_parent(curr_iter)
+        self.app.breadcrumb_label.set_markup(
+            '<b>Path:</b> <span color="gray">' + " &gt; ".join(path_names) + "</span>"
+        )
+        return ancestors
 
     def _render_page_with_rect_highlight(self, page_idx, pdf_rect, rgba):
         surface, scaled_w, scaled_h, page, cr, fit_scale, page_w, page_h = (
@@ -321,33 +332,39 @@ class EventHandler:
         base_target = clean_target.split("+")[-1].lower()
 
         if success and attributes:
-            cr.set_source_rgba(1.0, 1.0, 0.0, 0.4)  # Semi-transparent yellow
-
-            for attr in attributes:
-                if not attr.font_name:
-                    continue
-                reported_name = attr.font_name.lower()
-                # Check if the font name matches
-                if base_target in reported_name or reported_name in base_target:
-                    # Draw a rectangle for every character in this span
-                    print(
-                        f"rectangles: {len(rectangles)}, attr span: {attr.start_index} to {attr.end_index}"
-                    )
-                    for i in range(attr.start_index, attr.end_index + 1):
-                        if i < len(rectangles):
-                            r = rectangles[i]
-                            width = abs(r.x2 - r.x1)
-                            height = abs(r.y2 - r.y1)
-                            # if rotation % 360 == 90:
-                            #     width, height = height, width
-                            rect = [r.x1, r.y1, width, height]
-                            print(f"rect={rect}")
-                            cr.rectangle(*rect)
-                    cr.fill()
-
+            self._render_highlight_to_surface(
+                surface, cr, rectangles, attributes, base_target
+            )
         # 3. Update UI
         pixbuf = Gdk.pixbuf_get_from_surface(surface, 0, 0, scaled_w, scaled_h)
         self.app.image_view.set_from_pixbuf(pixbuf)
+
+    def _render_highlight_to_surface(
+        self, surface, cr, rectangles, attributes, base_target
+    ):
+        cr.set_source_rgba(1.0, 1.0, 0.0, 0.4)  # Semi-transparent yellow
+
+        for attr in attributes:
+            if not attr.font_name:
+                continue
+            reported_name = attr.font_name.lower()
+            # Check if the font name matches
+            if base_target in reported_name or reported_name in base_target:
+                # Draw a rectangle for every character in this span
+                print(
+                    f"rectangles: {len(rectangles)}, attr span: {attr.start_index} to {attr.end_index}"
+                )
+                for i in range(attr.start_index, attr.end_index + 1):
+                    if i < len(rectangles):
+                        r = rectangles[i]
+                        width = abs(r.x2 - r.x1)
+                        height = abs(r.y2 - r.y1)
+                        # if rotation % 360 == 90:
+                        #     width, height = height, width
+                        rect = [r.x1, r.y1, width, height]
+                        print(f"rect={rect}")
+                        cr.rectangle(*rect)
+                cr.fill()
 
     def _handle_stream(self, pdf_obj, treeiter, model, name, content_buf, meta_buf):
         parent_iter = model.iter_parent(treeiter)

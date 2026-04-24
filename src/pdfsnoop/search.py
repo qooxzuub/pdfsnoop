@@ -163,46 +163,39 @@ def _build_resume_stack(pdf_root, cursor_path, adapter):
         if isinstance(ancestor_obj, (pikepdf.Dictionary, pikepdf.Stream)):
             keys = sorted(ancestor_obj.items(), key=sort_pdf_keys)
             try:
-                idx = next(i for i, (k, _) in enumerate(keys) if str(k) == child_name)
-                # After: reversed so stack pops in forward order
-                for k, v in reversed(keys[idx + 1 :]):
-                    stack_after.append(
-                        (lambda val=v: val, ancestor_ref, str(k), current_id)
-                    )
-                # Before: reversed so stack pops in forward order
-                for k, v in reversed(keys[:idx]):
-                    stack_before.append(
-                        (lambda val=v: val, ancestor_ref, str(k), current_id)
-                    )
+                _add_stream_to_stack(
+                    stack_before,
+                    stack_after,
+                    current_id,
+                    child_name,
+                    ancestor_obj,
+                    ancestor_ref,
+                    keys,
+                )
             except StopIteration:
                 break
 
         elif isinstance(ancestor_obj, pikepdf.Array):
             try:
-                idx = int(child_name.strip("[]"))
-                for j in range(len(ancestor_obj) - 1, idx, -1):
-                    stack_after.append(
-                        (
-                            lambda arr=ancestor_obj, i=j: arr[i],
-                            ancestor_ref,
-                            f"[{j}]",
-                            current_id,
-                        )
-                    )
-                for j in range(idx - 1, -1, -1):
-                    stack_before.append(
-                        (
-                            lambda arr=ancestor_obj, i=j: arr[i],
-                            ancestor_ref,
-                            f"[{j}]",
-                            current_id,
-                        )
-                    )
+                _add_array_to_stack(
+                    stack_before,
+                    stack_after,
+                    current_id,
+                    child_name,
+                    ancestor_obj,
+                    ancestor_ref,
+                )
             except ValueError:
                 break
 
         parent_id = current_id
 
+    return _build_stack(
+        stack_before, stack_after, store, cursor_path, path_chain, parent_id
+    )
+
+
+def _build_stack(stack_before, stack_after, store, cursor_path, path_chain, parent_id):
     # Cursor node itself
     cursor_iter = store.get_iter(cursor_path)
     cursor_obj = store[cursor_iter][1]
@@ -222,6 +215,42 @@ def _build_resume_stack(pdf_root, cursor_path, adapter):
         (lambda val=cursor_obj: val, cursor_parent_ref, cursor_name, parent_id)
     )
     return stack
+
+
+def _add_array_to_stack(
+    stack_before, stack_after, current_id, child_name, ancestor_obj, ancestor_ref
+):
+    idx = int(child_name.strip("[]"))
+    for j in range(len(ancestor_obj) - 1, idx, -1):
+        stack_after.append(
+            (
+                lambda arr=ancestor_obj, i=j: arr[i],
+                ancestor_ref,
+                f"[{j}]",
+                current_id,
+            )
+        )
+    for j in range(idx - 1, -1, -1):
+        stack_before.append(
+            (
+                lambda arr=ancestor_obj, i=j: arr[i],
+                ancestor_ref,
+                f"[{j}]",
+                current_id,
+            )
+        )
+
+
+def _add_stream_to_stack(
+    stack_before, stack_after, current_id, child_name, ancestor_obj, ancestor_ref, keys
+):
+    idx = next(i for i, (k, _) in enumerate(keys) if str(k) == child_name)
+    # After: reversed so stack pops in forward order
+    for k, v in reversed(keys[idx + 1 :]):
+        stack_after.append((lambda val=v: val, ancestor_ref, str(k), current_id))
+    # Before: reversed so stack pops in forward order
+    for k, v in reversed(keys[:idx]):
+        stack_before.append((lambda val=v: val, ancestor_ref, str(k), current_id))
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +276,7 @@ def _is_visited_duplicate(
 
 
 def _handle_root_node(
-    obj, is_ind, current_id, store, visited_indirect, push_children_cb
+    obj, is_ind, current_id, store, visited_indirect, push_children_cb, stack
 ):
     """2. Process the root node, optionally pushing its children."""
     ui_node = store.get_iter_first()
@@ -264,7 +293,7 @@ def _handle_root_node(
             visited_indirect.add(obj.objgen)
 
     if should_push:
-        push_children_cb(obj, node_ref, current_id)
+        push_children_cb(obj, node_ref, current_id, stack)
 
     return store[ui_node][2], node_ref
 
@@ -320,6 +349,25 @@ def _prepare_descent(store, adapter, ui_node, obj, is_ind, visited_indirect):
     return True
 
 
+def _to_iter(ref, store):
+    if ref is None or not ref.valid():
+        return None
+    return store.get_iter(ref.get_path())
+
+
+def _push_children(obj, node_ref, current_id, stack):
+    if not node_ref.valid():
+        return
+    if isinstance(obj, (pikepdf.Dictionary, pikepdf.Stream)):
+        for key, val in reversed(sorted(obj.items(), key=sort_pdf_keys)):
+            stack.append((lambda v=val: v, node_ref, str(key), current_id))
+    elif isinstance(obj, pikepdf.Array):
+        for i in range(len(obj) - 1, -1, -1):
+            stack.append(
+                (lambda arr=obj, idx=i: arr[idx], node_ref, f"[{i}]", current_id)
+            )
+
+
 def iter_pdf_for_search(pdf_root, adapter, start_path=None):
     """
     Generator that walks the PDF object graph, starting from start_path and
@@ -329,23 +377,6 @@ def iter_pdf_for_search(pdf_root, adapter, start_path=None):
     stack = _build_resume_stack(pdf_root, start_path, adapter)
     visited_indirect = set()  # objgen tuples
     visited_direct = set()  # (parent_path_str, name)
-
-    def to_iter(ref):
-        if ref is None or not ref.valid():
-            return None
-        return store.get_iter(ref.get_path())
-
-    def push_children(obj, node_ref, current_id):
-        if not node_ref.valid():
-            return
-        if isinstance(obj, (pikepdf.Dictionary, pikepdf.Stream)):
-            for key, val in reversed(sorted(obj.items(), key=sort_pdf_keys)):
-                stack.append((lambda v=val: v, node_ref, str(key), current_id))
-        elif isinstance(obj, pikepdf.Array):
-            for i in range(len(obj) - 1, -1, -1):
-                stack.append(
-                    (lambda arr=obj, idx=i: arr[idx], node_ref, f"[{i}]", current_id)
-                )
 
     # -----------------------------------------------------------------------
     # Orchestrator Loop
@@ -366,13 +397,13 @@ def iter_pdf_for_search(pdf_root, adapter, start_path=None):
         # 2. Root Handling
         if parent_ref is None:
             root_match = _handle_root_node(
-                obj, is_ind, current_id, store, visited_indirect, push_children
+                obj, is_ind, current_id, store, visited_indirect, _push_children, stack
             )
             if root_match:
                 yield root_match
             continue
 
-        parent_ui = to_iter(parent_ref)
+        parent_ui = _to_iter(parent_ref, store)
         if parent_ui is None:
             continue
 
@@ -389,7 +420,7 @@ def iter_pdf_for_search(pdf_root, adapter, start_path=None):
 
         # 5. Descent Logic (Should we look inside this object?)
         if _prepare_descent(store, adapter, ui_node, obj, is_ind, visited_indirect):
-            push_children(obj, node_ref, current_id)
+            _push_children(obj, node_ref, current_id, stack)
 
 
 # ---------------------------------------------------------------------------
@@ -525,34 +556,39 @@ class SearchController:
     def _tick(self):
         if self._gen is None:
             return False
-
         text = self._text
         t_start = time.monotonic()
-
-        try:
-            while time.monotonic() - t_start < TICK_TARGET_SECONDS:
-                raw_text, ref = next(self._gen)
-                self._nodes_visited += 1
-                if raw_text and text in raw_text.lower():
-                    if ref.valid():
-                        self.matches.append(ref)
-                        if len(self.matches) == 1:
-                            self.current_index = 0
-                            self._jump_to_current()
-
-            self.app.statusbar.pop(0)
-            self.app.statusbar.push(
-                0,
-                f"Searching... {self._nodes_visited} nodes visited, "
-                f"{len(self.matches)} matches so far",
-            )
-            return True
-
-        except StopIteration:
+        exhausted = self._work_for_a_tick(t_start, text)
+        if exhausted:
             self._idle_id = None
             self._gen = None
             self._finish()
             return False
+        return True
+
+    def _work_for_a_tick(self, t_start, text):
+        while time.monotonic() - t_start < TICK_TARGET_SECONDS:
+            try:
+                raw_text, ref = next(self._gen)
+            except StopIteration:
+                return True  # exhausted
+            self._nodes_visited += 1
+            if raw_text and text in raw_text.lower():
+                if ref.valid():
+                    self.matches.append(ref)
+                    if len(self.matches) == 1:
+                        self.current_index = 0
+                        self._jump_to_current()
+        self._update_progress_status()
+        return False
+
+    def _update_progress_status(self):
+        self.app.statusbar.pop(0)
+        self.app.statusbar.push(
+            0,
+            f"Searching... {self._nodes_visited} nodes visited, "
+            f"{len(self.matches)} matches so far",
+        )
 
     def _finish(self):
         seen = set()
