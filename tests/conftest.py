@@ -1,8 +1,5 @@
 """Shared fixtures for pdfsnoop tests."""
 
-import os
-import tempfile
-
 import pikepdf
 import pytest
 

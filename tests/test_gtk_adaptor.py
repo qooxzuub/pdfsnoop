@@ -44,7 +44,11 @@ def test_create_node_dictionary(adapter):
     pdf_dict.objgen = (10, 0)
     pdf_dict.__len__.return_value = 5
 
-    it = adapter.create_node(None,  "Root", pdf_dict,)
+    it = adapter.create_node(
+        None,
+        "Root",
+        pdf_dict,
+    )
 
     # Check if markup contains expected fragments
     markup = adapter.store[it][0]
@@ -76,9 +80,6 @@ def test_get_iter_from_objgen_string(adapter):
 
 
 import pytest
-from unittest.mock import MagicMock
-from pdfsnoop.gtk_adaptor import GtkAdapter
-from pdfsnoop.pdf_utils import JumpReference
 
 # ... Keep the FakeStore class and adapter fixture from the previous message ...
 
@@ -96,13 +97,17 @@ def test_create_node_various_types(adapter):
     pdf_arr = MagicMock()
     pdf_arr.is_indirect = False
     pdf_arr.__len__.return_value = 3
-    it_arr = adapter.create_node(None, "MyArray",  pdf_arr)
+    it_arr = adapter.create_node(None, "MyArray", pdf_arr)
     assert "Array[3]" in adapter.store[it_arr][0]
 
     # 2. Stream
     pdf_stm = MagicMock()
     pdf_stm.is_indirect = False
-    it_stm = adapter.create_node(None, "MyStream", pdf_stm, )
+    it_stm = adapter.create_node(
+        None,
+        "MyStream",
+        pdf_stm,
+    )
     assert "Stream" in adapter.store[it_stm][0]
 
     # 3. Scalar/Else (e.g. a String or Name)
@@ -129,5 +134,3 @@ def test_create_jump(adapter):
     # Corrected attribute: target_node instead of path
     assert jump_ref.target_node == ["iter_1"]
     assert "↪ MyLink" in adapter.store[jump_it][0]
-
-

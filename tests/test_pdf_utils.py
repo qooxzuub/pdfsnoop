@@ -6,7 +6,6 @@ import pytest
 from pdfsnoop.pdf_utils import (
     is_content_stream,
     sort_pdf_keys,
-    JumpReference,
     TreeAdapter,
     disassemble_content_stream,
 )
@@ -243,8 +242,6 @@ class TestSortPdfKeys:
 # ==========================================
 
 
-
-
 class MockAdapter(TreeAdapter):
     """A dummy adapter that records what walk_pdf tells it to do."""
 
@@ -295,12 +292,18 @@ def test_disassemble_content_stream():
     assert "% Show text" in output
 
 
-
 # ---------------------------------------------------------------------------
 # is_human_readable
 # ---------------------------------------------------------------------------
 
-from pdfsnoop.pdf_utils import is_human_readable, format_pdf_string, is_page_with_index, is_font_with_page, is_annotation_with_page, is_link_with_page
+from pdfsnoop.pdf_utils import (
+    is_human_readable,
+    format_pdf_string,
+    is_page_with_index,
+    is_font_with_page,
+    is_annotation_with_page,
+    is_link_with_page,
+)
 
 
 class TestIsHumanReadable:
@@ -363,10 +366,12 @@ class TestFormatPdfString:
 class TestIsPageWithIndex:
     def test_recognises_page(self):
         pdf = pikepdf.Pdf.new()
-        page = pikepdf.Page(pikepdf.Dictionary(
-            Type=pikepdf.Name("/Page"),
-            MediaBox=pikepdf.Array([0, 0, 612, 792]),
-        ))
+        page = pikepdf.Page(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Page"),
+                MediaBox=pikepdf.Array([0, 0, 612, 792]),
+            )
+        )
         pdf.pages.append(page)
         is_page, idx = is_page_with_index(pdf, pdf.pages[0].obj)
         assert is_page is True
@@ -402,10 +407,12 @@ class TestIsPageWithIndex:
 class TestIsFontWithPage:
     def _make_pdf_with_page(self):
         pdf = pikepdf.Pdf.new()
-        page = pikepdf.Page(pikepdf.Dictionary(
-            Type=pikepdf.Name("/Page"),
-            MediaBox=pikepdf.Array([0, 0, 612, 792]),
-        ))
+        page = pikepdf.Page(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Page"),
+                MediaBox=pikepdf.Array([0, 0, 612, 792]),
+            )
+        )
         pdf.pages.append(page)
         return pdf
 
@@ -443,10 +450,12 @@ class TestIsFontWithPage:
 class TestIsAnnotationWithPage:
     def _make_pdf_with_page(self):
         pdf = pikepdf.Pdf.new()
-        page = pikepdf.Page(pikepdf.Dictionary(
-            Type=pikepdf.Name("/Page"),
-            MediaBox=pikepdf.Array([0, 0, 612, 792]),
-        ))
+        page = pikepdf.Page(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Page"),
+                MediaBox=pikepdf.Array([0, 0, 612, 792]),
+            )
+        )
         pdf.pages.append(page)
         return pdf
 
