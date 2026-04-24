@@ -9,7 +9,7 @@ import tempfile
 
 import pikepdf
 
-from .pdf_utils import _infer_type, _parse_value
+from .pdf_utils import _infer_type, _parse_value, format_pdf_string
 
 
 class ActionHandler:
@@ -444,17 +444,29 @@ class ActionHandler:
             self._show_error("Edit Failed", str(e))
 
     def action_normalize(self, widget):
-        """Parses and unparses a content stream to format operators to one-per-line."""
         obj = self.get_selected_pdf_obj()
         if not isinstance(obj, pikepdf.Stream):
-            self._show_error(
-                "Invalid Selection", "Please select a stream to normalize."
-            )
+            self._show_error("Invalid Selection", "Please select a stream to normalize.")
             return
 
         try:
             parsed = pikepdf.parse_content_stream(obj)
-            normalized_bytes = pikepdf.unparse_content_stream(parsed)
+
+            # Convert hex strings to readable literal strings where possible
+            normalized = []
+            for operands, operator in parsed:
+                new_operands = []
+                for arg in operands:
+                    if isinstance(arg, pikepdf.String):
+                        decoded = format_pdf_string(arg)
+                        # Only replace if format_pdf_string actually decoded it
+                        # (i.e. it didn't fall back to hex representation)
+                        if not decoded.startswith("<"):
+                            arg = pikepdf.String(decoded)
+                    new_operands.append(arg)
+                normalized.append((new_operands, operator))
+
+            normalized_bytes = pikepdf.unparse_content_stream(normalized)
             old_bytes = obj.read_bytes()
 
             if normalized_bytes != old_bytes:
@@ -463,18 +475,11 @@ class ActionHandler:
                     "Stream Normalized",
                     f"Successfully formatted stream.\nLength: {len(old_bytes)} -> {len(normalized_bytes)} bytes.",
                 )
-                # Re-emit selection to update the right-side content pane automatically
                 self.app.tree_view.get_selection().emit("changed")
             else:
-                self._show_info(
-                    "Unchanged", "Stream is already formatted or unchanged."
-                )
+                self._show_info("Unchanged", "Stream is already formatted or unchanged.")
         except Exception as e:
-            self._show_error(
-                "Normalization Failed",
-                f"This might not be a valid content stream:\n{str(e)}",
-            )
-
+            self._show_error("Normalization Failed", f"This might not be a valid content stream:\n{str(e)}")
     def action_checkbox_toggle_and_refresh(self, checkmenuitem):
         """Refreshes the current view when a view mode is toggled."""
         # Trigger a refresh of the right-hand pane

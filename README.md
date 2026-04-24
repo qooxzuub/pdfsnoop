@@ -1,4 +1,4 @@
-# pdfsnoop
+1# pdfsnoop
 
 A GTK desktop tool for exploring PDF internals.
 
@@ -42,7 +42,7 @@ pdfsnoop file.pdf
 | `j` / `k` | Move down / up |
 | `h` / `l` | Collapse / expand node |
 | `g` | Jump to page number |
-| `e` | Edit stream in `$EDITOR` |
+| `e` | Edit value inline or stream in `$EDITOR` |
 | `s` | Extract stream or image |
 | `f` | Normalize content stream |
 | `w` | Save PDF as... |
