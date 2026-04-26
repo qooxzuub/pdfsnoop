@@ -7,6 +7,8 @@ import subprocess
 import shlex
 import tempfile
 
+import webbrowser
+
 import pikepdf
 
 from .pdf_utils import _infer_type, _parse_value
@@ -48,6 +50,32 @@ class ActionHandler:
         if treeiter:
             return model[treeiter][1]
         return None
+
+    def action_show_docs(self, _widget):
+        webbrowser.open("https://github.com/qooxzuub/pdfsnoop#readme")
+
+    def action_show_about(self, widget):
+        """Displays the standard GTK About dialog."""
+        import importlib.metadata
+
+        try:
+            app_version = importlib.metadata.version("pdfsnoop")
+        except importlib.metadata.PackageNotFoundError:
+            app_version = "Development"  # Fallback if not installed via pip
+        dialog = Gtk.AboutDialog(
+            transient_for=self.app,
+            modal=True,
+            program_name="pdfsnoop",
+            version=app_version,
+            comments="A GTK-based PDF inspection tool.",
+            website="https://github.com/qooxzuub/pdfsnoop",
+            website_label="Project Homepage",
+            logo_icon_name="utilities-system-monitor",  # A fallback standard GNOME icon
+        )
+
+        # Clean up the dialog when the user clicks 'Close'
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
 
     def action_open(self, widget):
         """Spawns a standard GTK file chooser dialog to pick a new PDF."""

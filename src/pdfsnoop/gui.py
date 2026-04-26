@@ -272,6 +272,23 @@ class PDFSnoopGUI(Gtk.Window):
             ("_Jump to Page (g)", self.actions.action_jump_page),
         ]
 
+        # Help Menu
+        help_menu = Gtk.Menu()
+        help_item = Gtk.MenuItem(label="_Help")
+        help_item.set_submenu(help_menu)
+        append_menuitems([help_item], self.menubar)
+
+        # Documentation Item
+        item_docs = Gtk.MenuItem(label="_Documentation")
+        item_docs.connect("activate", self.actions.action_show_docs)
+        add_accel(item_docs, "F1")
+
+        # About Item
+        item_about = Gtk.MenuItem(label="_About")
+        item_about.connect("activate", self.actions.action_show_about)
+
+        append_menuitems([item_docs, item_about], help_menu)
+
         # Populate both menus
         for label, handler in actions:
             # Top Menu
