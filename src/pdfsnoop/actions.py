@@ -1,7 +1,8 @@
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gtk, Gdk  # noqa: E402
+import re
 import os
 import subprocess
 import shlex
@@ -103,6 +104,21 @@ class ActionHandler:
             self.app.load_new_pdf(dialog.get_filename())
 
         dialog.destroy()
+
+    def action_copy(self, widget):
+        """Copies the text of the currently selected tree node to the clipboard."""
+        # Get the current selection from the tree
+        selection = self.app.tree_view.get_selection()
+        model, treeiter = selection.get_selected()
+
+        if treeiter is not None:
+            # Grab the display string from Column 0.
+            # (If your raw pikepdf object string is in another column, change the 0)
+            text_to_copy = re.sub(r'<[^>]*>', '', str(model[treeiter][0]))
+
+            # Send it to the system clipboard
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(text_to_copy, -1)
 
     def action_revert(self, widget):
         """Reloads the current file from disk, discarding unsaved changes."""

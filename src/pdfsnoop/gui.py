@@ -222,6 +222,18 @@ class PDFSnoopGUI(Gtk.Window):
 
         append_menuitems([item_open, item_revert, item_save, item_quit], file_menu)
 
+        edit_menu = Gtk.Menu()
+        edit_item = Gtk.MenuItem(label="_Edit")
+        edit_item.set_submenu(edit_menu)
+        # Assuming you want it between File and View
+        append_menuitems([edit_item], self.menubar)
+
+        item_copy = Gtk.MenuItem(label="_Copy Value")
+        item_copy.connect("activate", self.actions.action_copy)
+        add_accel(item_copy, "<Control>c")
+
+        append_menuitems([item_copy], edit_menu)
+
         # View Menu (Top Bar only)
         view_menu = Gtk.Menu()
         view_item = Gtk.MenuItem(label="_View")
@@ -265,6 +277,8 @@ class PDFSnoopGUI(Gtk.Window):
 
         # Define actions tuple: (Label, Handler)
         actions = [
+            ("_Copy Value", self.actions.action_copy),
+            ("-", None),
             ("_Edit Stream / Value (e)", self.actions.action_edit),
             ("E_xtract Stream / Image (s)", self.actions.action_extract),
             ("_Normalize Stream (f)", self.actions.action_normalize),
@@ -291,6 +305,9 @@ class PDFSnoopGUI(Gtk.Window):
 
         # Populate both menus
         for label, handler in actions:
+            if handler is None:
+                self.context_menu.append(Gtk.SeparatorMenuItem())
+                continue
             # Top Menu
             top_mi = Gtk.MenuItem(label=label)
             top_mi.connect("activate", handler)
