@@ -49,6 +49,38 @@ class ActionHandler:
             return model[treeiter][1]
         return None
 
+    def action_open(self, widget):
+        """Spawns a standard GTK file chooser dialog to pick a new PDF."""
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a PDF file",
+            parent=self.app,
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        # Using string labels avoids GTK3 deprecation warnings on Stock items
+        dialog.add_buttons(
+            "Cancel",
+            Gtk.ResponseType.CANCEL,
+            "Open",
+            Gtk.ResponseType.OK,
+        )
+
+        # Restrict the dialog to just PDF files
+        filter_pdf = Gtk.FileFilter()
+        filter_pdf.set_name("PDF files")
+        filter_pdf.add_pattern("*.pdf")
+        dialog.add_filter(filter_pdf)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.app.load_new_pdf(dialog.get_filename())
+
+        dialog.destroy()
+
+    def action_revert(self, widget):
+        """Reloads the current file from disk, discarding unsaved changes."""
+        if self.app.pdf_path:
+            self.app.load_new_pdf(self.app.pdf_path)
+
     def action_save_pdf(self, widget):
         """Pops up a native Save dialog and writes the modified PDF to disk."""
         dialog = Gtk.FileChooserDialog(

@@ -23,13 +23,11 @@ class PDFSnoopGUI(Gtk.Window):
         super().__init__(title=f"pdfsnoop - {pdf_path}")
 
         self.pdf_path = pdf_path
+        self.pdf = None
         self.set_default_size(1200, 700)
 
-        try:
-            self.pdf = pikepdf.Pdf.open(pdf_path)
-        except Exception as e:
-            print(f"Failed to open PDF: {e}")
-            sys.exit(1)
+        self.accel_group = Gtk.AccelGroup()
+        self.add_accel_group(self.accel_group)
 
         self.actions = ActionHandler(self)
         self.events = EventHandler(self)
@@ -173,8 +171,6 @@ class PDFSnoopGUI(Gtk.Window):
         self.search_entry.connect("stop-search", self.events.on_search_cancel)
         self.connect("destroy", Gtk.main_quit)
 
-        self.populate_ui_tree()
-
         self.statusbar = Gtk.Statusbar()
         # pack_end puts it at the very bottom of the window
         self.main_vbox.pack_end(self.statusbar, False, False, 0)
@@ -182,7 +178,8 @@ class PDFSnoopGUI(Gtk.Window):
         self.show_all()
         self.edit_bar.hide()
 
-        self.actions.expand_to_pages()
+        if pdf_path:
+            self.load_new_pdf(pdf_path)
 
     # ==========================================
     # MENU & ACTION SETUP
@@ -197,17 +194,33 @@ class PDFSnoopGUI(Gtk.Window):
                 item.set_use_underline(True)
                 parent.append(item)
 
+        def add_accel(menu_item, keypress_str):
+            key, mod = Gtk.accelerator_parse(keypress_str)
+            menu_item.add_accelerator(
+                "activate", self.accel_group, key, mod, Gtk.AccelFlags.VISIBLE
+            )
+
         # File Menu (Top Bar only)
         file_menu = Gtk.Menu()
         file_item = Gtk.MenuItem(label="_File")
         file_item.set_submenu(file_menu)
         append_menuitems([file_item], self.menubar)
 
+        item_open = Gtk.MenuItem(label="_Open PDF...")
+        item_open.connect("activate", self.actions.action_open)
+        add_accel(item_open, "<Control>o")
+
+        item_revert = Gtk.MenuItem(label="Re_vert")
+        item_revert.connect("activate", self.actions.action_revert)
+
         item_save = Gtk.MenuItem(label="_Save PDF As... (w)")
         item_save.connect("activate", self.actions.action_save_pdf)
+
         item_quit = Gtk.MenuItem(label="E_xit (Ctrl+q)")
         item_quit.connect("activate", Gtk.main_quit)
-        append_menuitems([item_save, item_quit], file_menu)
+        add_accel(item_quit, "<Control>q")
+
+        append_menuitems([item_open, item_revert, item_save, item_quit], file_menu)
 
         # View Menu (Top Bar only)
         view_menu = Gtk.Menu()
@@ -221,16 +234,19 @@ class PDFSnoopGUI(Gtk.Window):
         self.item_disassemble.connect(
             "toggled", self.actions.action_checkbox_toggle_and_refresh
         )
+        add_accel(self.item_disassemble, "<Alt>1")
         self.item_preview_images = Gtk.CheckMenuItem(label="_Image previews")
         self.item_preview_images.set_active(True)  # Default to ON
         self.item_preview_images.connect(
             "toggled", self.actions.action_checkbox_toggle_and_refresh
         )
+        add_accel(self.item_preview_images, "<Alt>2")
         self.item_preview_pages = Gtk.CheckMenuItem(label="_Page previews")
         self.item_preview_pages.set_active(True)  # Default to ON
         self.item_preview_pages.connect(
             "toggled", self.actions.action_checkbox_toggle_and_refresh
         )
+        add_accel(self.item_preview_pages, "<Alt>3")
 
         append_menuitems(
             [
@@ -269,6 +285,46 @@ class PDFSnoopGUI(Gtk.Window):
 
         # Required so the context menu items are visible when popped up
         self.context_menu.show_all()
+
+    def load_new_pdf(self, file_path):
+        """Shared helper to safely swap out the active pikepdf instance and reset the UI."""
+        try:
+            new_pdf = pikepdf.Pdf.open(file_path)
+        except Exception as e:
+            dialog = Gtk.MessageDialog(
+                transient_for=self,
+                flags=0,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text="Failed to open PDF",
+            )
+            dialog.format_secondary_text(f"Could not open '{file_path}':\n\n{e}")
+            dialog.run()
+            dialog.destroy()
+            return
+
+        self.store.clear()
+        # Safely close the old file handle before swapping
+        if hasattr(self, "pdf") and self.pdf:
+            self.pdf.close()
+
+        self.pdf_path = file_path
+        self.pdf = new_pdf
+        self.events.reset_poppler()
+
+        # Update UI state
+        self.set_title(f"pdfsnoop - {self.pdf_path}")
+        self.populate_ui_tree()
+
+        # Clear out the right-side panes
+        self.breadcrumb_label.set_markup("<b>Path:</b> /")
+        self.metadata_view.get_buffer().set_text("")
+        self.content_view.get_buffer().set_text("")
+        self.image_view.clear()
+        self.edit_bar.hide()
+
+        # Re-trigger your initial expansion state
+        self.actions.expand_to_pages()
 
     @property
     def disassemble_mode(self):
@@ -322,11 +378,7 @@ class PDFSnoopGUI(Gtk.Window):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python -m src.pdfsnoop.gui <file.pdf>")
-        sys.exit(1)
-
-    PDFSnoopGUI(sys.argv[1])
+    PDFSnoopGUI(sys.argv[1] if len(sys.argv) > 1 else None)
     Gtk.main()
 
 

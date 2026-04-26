@@ -28,6 +28,10 @@ from .pdf_operators import ops
 class EventHandler:
     def __init__(self, app):
         self.app = app
+        if self.app.pdf:
+            self.reset_poppler()
+
+    def reset_poppler(self):
         absolute_path = os.path.abspath(os.path.expanduser(self.app.pdf_path))
         uri = GLib.filename_to_uri(absolute_path, None)
         self.poppler_doc = Poppler.Document.new_from_file(uri, None)
