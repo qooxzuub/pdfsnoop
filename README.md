@@ -1,4 +1,4 @@
-1# pdfsnoop
+# pdfsnoop
 
 A GTK desktop tool for exploring PDF internals.
 
