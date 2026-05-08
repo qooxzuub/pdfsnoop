@@ -1,11 +1,14 @@
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gtk, Gdk  # noqa: E402
+import re
 import os
 import subprocess
 import shlex
 import tempfile
+
+import webbrowser
 
 import pikepdf
 
@@ -48,6 +51,79 @@ class ActionHandler:
         if treeiter:
             return model[treeiter][1]
         return None
+
+    def action_show_docs(self, _widget):
+        webbrowser.open("https://github.com/qooxzuub/pdfsnoop#readme")
+
+    def action_show_about(self, widget):
+        """Displays the standard GTK About dialog."""
+        import importlib.metadata
+
+        try:
+            app_version = importlib.metadata.version("pdfsnoop")
+        except importlib.metadata.PackageNotFoundError:
+            app_version = "Development"  # Fallback if not installed via pip
+        dialog = Gtk.AboutDialog(
+            transient_for=self.app,
+            modal=True,
+            program_name="pdfsnoop",
+            version=app_version,
+            comments="A GTK-based PDF inspection tool.",
+            website="https://github.com/qooxzuub/pdfsnoop",
+            website_label="Project Homepage",
+            logo_icon_name="utilities-system-monitor",  # A fallback standard GNOME icon
+        )
+
+        # Clean up the dialog when the user clicks 'Close'
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
+
+    def action_open(self, widget):
+        """Spawns a standard GTK file chooser dialog to pick a new PDF."""
+        dialog = Gtk.FileChooserDialog(
+            title="Please choose a PDF file",
+            parent=self.app,
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        # Using string labels avoids GTK3 deprecation warnings on Stock items
+        dialog.add_buttons(
+            "Cancel",
+            Gtk.ResponseType.CANCEL,
+            "Open",
+            Gtk.ResponseType.OK,
+        )
+
+        # Restrict the dialog to just PDF files
+        filter_pdf = Gtk.FileFilter()
+        filter_pdf.set_name("PDF files")
+        filter_pdf.add_pattern("*.pdf")
+        dialog.add_filter(filter_pdf)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.app.load_new_pdf(dialog.get_filename())
+
+        dialog.destroy()
+
+    def action_copy(self, widget):
+        """Copies the text of the currently selected tree node to the clipboard."""
+        # Get the current selection from the tree
+        selection = self.app.tree_view.get_selection()
+        model, treeiter = selection.get_selected()
+
+        if treeiter is not None:
+            # Grab the display string from Column 0.
+            # (If your raw pikepdf object string is in another column, change the 0)
+            text_to_copy = re.sub(r'<[^>]*>', '', str(model[treeiter][0]))
+
+            # Send it to the system clipboard
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+            clipboard.set_text(text_to_copy, -1)
+
+    def action_revert(self, widget):
+        """Reloads the current file from disk, discarding unsaved changes."""
+        if self.app.pdf_path:
+            self.app.load_new_pdf(self.app.pdf_path)
 
     def action_save_pdf(self, widget):
         """Pops up a native Save dialog and writes the modified PDF to disk."""
