@@ -19,15 +19,25 @@ Selecting certain objects highlights them on the page preview:
 
 Requires Python 3.10+, GTK 3, and Poppler.
 
-```bash
-pip install pdfsnoop
-```
-
 On Debian/Ubuntu you may need system packages:
 
 ```bash
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-poppler-0.18 libgirepository-2.0-dev
 ```
+
+Then run these commands to install
+```
+SNOOPDIR=~/software/pdfsnoop  # or wherever you like
+mkdir -p $SNOOPDIR && cd $SNOOPDIR
+python -m venv --system-site-packages pdfsnoop-venv
+source pdfsnoop-venv/bin/activate
+git clone https://github.com/qooxzuub/pdfsnoop
+pip install ./pdfsnoop
+```
+If you add `$SNOOPDIR/pdfsnoop-venv/bin` to your `PATH` then running `pdfsnoop` should work.
+
+_FIXME: publish to PyPI for easier installation_
+
 
 ## Usage
 
