@@ -2,6 +2,12 @@
 
 A GTK desktop tool for exploring PDF internals.
 
+| feature                        | screenshot                                                                                                               |
+|--------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| content disassembly            | <img width="400" src="https://raw.githubusercontent.com/qooxzuub/pdfsnoop/main/.github/assets/pdfsnoop_disassemble.png"> |
+| page preview/font highlighting | <img width="400" src="https://raw.githubusercontent.com/qooxzuub/pdfsnoop/main/.github/assets/pdfsnoop_font.png">        |
+| annotation highlighting        | <img width="400" src="https://raw.githubusercontent.com/qooxzuub/pdfsnoop/main/.github/assets/pdfsnoop_annotation.png">  |
+
 ## What it does
 
 Opens a PDF file and displays its internal object tree, allowing you to inspect
