@@ -372,7 +372,6 @@ class EventHandler:
                         # if rotation % 360 == 90:
                         #     width, height = height, width
                         rect = [r.x1, r.y1, width, height]
-                        print(f"rect={rect}")
                         cr.rectangle(*rect)
                 cr.fill()
 
