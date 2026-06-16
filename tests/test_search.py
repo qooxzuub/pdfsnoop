@@ -196,7 +196,6 @@ def test_controller_navigation_wrap(app, controller):
 
 
 def test_iter_pdf_exhausts_graph(app):
-
     real_store = Gtk.TreeStore(object, object, str, str)
     adapter = GtkAdapter(real_store)
 

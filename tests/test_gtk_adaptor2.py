@@ -91,7 +91,7 @@ def adapter(store):
 
 class TestGetMarkupEtc:
     def test_dictionary(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = False
         pdf_obj.__len__ = MagicMock(return_value=3)
         markup, raw = adapter._get_markup_etc(
@@ -103,7 +103,7 @@ class TestGetMarkupEtc:
         assert "/Font" in raw
 
     def test_dictionary_indirect(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = True
         pdf_obj.objgen = (5, 0)
         pdf_obj.__len__ = MagicMock(return_value=2)
@@ -114,7 +114,7 @@ class TestGetMarkupEtc:
         assert "Obj 5:0" in raw
 
     def test_array(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Array)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = False
         pdf_obj.__len__ = MagicMock(return_value=7)
         markup, raw = adapter._get_markup_etc(
@@ -191,7 +191,7 @@ class TestCreateNode:
         assert adapter.store[it][3] == "/Root"
 
     def test_indirect_registered(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = True
         pdf_obj.objgen = (10, 0)
         pdf_obj.__len__ = MagicMock(return_value=1)
@@ -200,7 +200,7 @@ class TestCreateNode:
         assert (10, 0) in adapter.registry
 
     def test_indirect_not_duplicate_registered(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = True
         pdf_obj.objgen = (10, 0)
         pdf_obj.__len__ = MagicMock(return_value=1)
@@ -211,7 +211,7 @@ class TestCreateNode:
         assert adapter.registry[(10, 0)].get_path() == adapter.store.get_path(it1)
 
     def test_no_placeholder_for_empty_dict(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = False
         pdf_obj.__len__ = MagicMock(return_value=0)
         with patch.object(adapter, "_get_markup_etc", return_value=("markup", "raw")):
@@ -260,7 +260,7 @@ class TestCreateJump:
 
 class TestPlaceholder:
     def test_has_placeholder_false_after_remove(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = False
         pdf_obj.__len__ = MagicMock(return_value=2)
         with patch.object(adapter, "_get_markup_etc", return_value=("m", "r")):
@@ -273,7 +273,7 @@ class TestPlaceholder:
         assert not adapter.has_placeholder(it)
 
     def test_remove_placeholder_idempotent(self, adapter):
-        pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+        pdf_obj = MagicMock()
         pdf_obj.is_indirect = False
         pdf_obj.__len__ = MagicMock(return_value=1)
         with patch.object(adapter, "_get_markup_etc", return_value=("m", "r")):

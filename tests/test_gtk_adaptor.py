@@ -79,7 +79,7 @@ def test_create_node_dictionary(adapter_patched):
             pass  # pikepdf objects can't easily be made indirect in isolation
 
     # Use MagicMock but patch _get_markup_etc to return known values
-    pdf_dict = MagicMock(spec=pikepdf.Dictionary)
+    pdf_dict = MagicMock()
     pdf_dict.is_indirect = True
     pdf_dict.objgen = (10, 0)
     pdf_dict.__len__.return_value = 5
@@ -105,8 +105,9 @@ def test_create_node_various_types(adapter_patched):
     adapter = adapter_patched
 
     # Array — patch _get_markup_etc
-    pdf_arr = MagicMock(spec=pikepdf.Array)
+    pdf_arr = MagicMock()
     pdf_arr.is_indirect = False
+    pdf_arr.__len__ = MagicMock()
     pdf_arr.__len__.return_value = 3
     with patch.object(
         adapter, "_get_markup_etc", return_value=("Array[3] markup", "Array[3] raw")
@@ -117,7 +118,6 @@ def test_create_node_various_types(adapter_patched):
     # Stream
     pdf_stm = MagicMock(spec=pikepdf.Stream)
     pdf_stm.is_indirect = False
-    pdf_stm.__len__.return_value = 0
     with patch.object(
         adapter, "_get_markup_etc", return_value=("Stream markup", "Stream raw")
     ):
@@ -155,7 +155,7 @@ def test_create_jump(adapter):
 def test_create_node_no_duplicate_registry(adapter_patched):
     """Second create_node for same objgen should not overwrite registry."""
     adapter = adapter_patched
-    pdf_obj = MagicMock(spec=pikepdf.Dictionary)
+    pdf_obj = MagicMock()
     pdf_obj.is_indirect = True
     pdf_obj.objgen = (42, 0)
     pdf_obj.__len__.return_value = 1
