@@ -12,7 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
                  /headings -->
 
-## 0.1.0 - 2026-04-22
+## 0.1.0 - 2026-06-16
+
+### Fixed
+
+- Test bugs resolved
+
+- Should install properly with pip now
+
+## Initial - 2026-04-22
 
 ### Added
 

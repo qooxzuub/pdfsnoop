@@ -32,7 +32,12 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-poppler-0.18 
 ```
 If your repo doesn't have `libgirepository-2.0-dev`, try `libgirepository1.0-dev`. (One less hyphen!)
 
-Then run these commands to install
+Then either run
+```
+sudo apt install pipx
+pipx install pdfsnoop --system-site-packages
+```
+or if that doesn't work, run these commands to install manually:
 ```
 SNOOPDIR=~/software/pdfsnoop  # or wherever you like
 mkdir -p $SNOOPDIR && cd $SNOOPDIR
@@ -41,10 +46,8 @@ source pdfsnoop-venv/bin/activate
 git clone https://github.com/qooxzuub/pdfsnoop
 pip install ./pdfsnoop
 ```
-If you add `$SNOOPDIR/pdfsnoop-venv/bin` to your `PATH` then running `pdfsnoop` should work.
-
-_FIXME: publish to PyPI for easier installation_
-
+For the second method, if you add `$SNOOPDIR/pdfsnoop-venv/bin` to your `PATH`
+then running `pdfsnoop` should work.
 
 ## Usage
 
