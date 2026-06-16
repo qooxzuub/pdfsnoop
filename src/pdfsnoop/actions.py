@@ -114,7 +114,7 @@ class ActionHandler:
         if treeiter is not None:
             # Grab the display string from Column 0.
             # (If your raw pikepdf object string is in another column, change the 0)
-            text_to_copy = re.sub(r'<[^>]*>', '', str(model[treeiter][0]))
+            text_to_copy = re.sub(r"<[^>]*>", "", str(model[treeiter][0]))
 
             # Send it to the system clipboard
             clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -522,7 +522,9 @@ class ActionHandler:
     def action_normalize(self, widget):
         obj = self.get_selected_pdf_obj()
         if not isinstance(obj, pikepdf.Stream):
-            self._show_error("Invalid Selection", "Please select a stream to normalize.")
+            self._show_error(
+                "Invalid Selection", "Please select a stream to normalize."
+            )
             return
 
         try:
@@ -553,9 +555,15 @@ class ActionHandler:
                 )
                 self.app.tree_view.get_selection().emit("changed")
             else:
-                self._show_info("Unchanged", "Stream is already formatted or unchanged.")
+                self._show_info(
+                    "Unchanged", "Stream is already formatted or unchanged."
+                )
         except Exception as e:
-            self._show_error("Normalization Failed", f"This might not be a valid content stream:\n{str(e)}")
+            self._show_error(
+                "Normalization Failed",
+                f"This might not be a valid content stream:\n{str(e)}",
+            )
+
     def action_checkbox_toggle_and_refresh(self, checkmenuitem):
         """Refreshes the current view when a view mode is toggled."""
         # Trigger a refresh of the right-hand pane

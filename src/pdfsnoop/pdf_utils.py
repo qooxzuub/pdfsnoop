@@ -65,10 +65,10 @@ class TreeAdapter:
     """Interface to be implemented by GUI."""
 
     def create_node(self, parent, pdf_obj, name, label_type):
-        pass
+        pass  # pragma: no cover
 
     def create_jump(self, parent, target_node, name, obj):
-        pass
+        pass  # pragma: no cover
 
 
 def disassemble_content_stream(stream_obj):

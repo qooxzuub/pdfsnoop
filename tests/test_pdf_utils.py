@@ -508,3 +508,80 @@ class TestIsAnnotationWithPage:
         ancestors = [annot, pdf.pages[0].obj]
         is_link, page_idx, rect = is_link_with_page(pdf, annot, ancestors)
         assert is_link is False
+
+
+# ---------------------------------------------------------------------------
+# Value Editing and Inference (Inference, Mutation, and Errors)
+# ---------------------------------------------------------------------------
+
+import decimal
+from pdfsnoop.pdf_utils import _infer_type, _parse_value
+
+
+class TestInferAndParseValues:
+    def test_infer_type_all_variants(self):
+        """Validates scalar types are inferred correctly for UI modification forms."""
+        assert _infer_type(True) == "Boolean"
+        assert _infer_type(decimal.Decimal("3.1415")) == "Real"
+        assert _infer_type(1024) == "Integer"
+        assert _infer_type(pikepdf.Name("/ExtGState")) == "Name"
+        assert _infer_type(pikepdf.String("Plain")) == "String"
+        assert _infer_type(None) is None
+
+    def test_infer_type_indirect_ref_mock(self):
+        """Validates that items marked with is_indirect flag match Indirect Ref."""
+
+        class MockIndirectObj:
+            is_indirect = True
+
+        assert _infer_type(MockIndirectObj()) == "Indirect Ref"
+
+    def test_parse_value_basic_types(self):
+        """Ensures text streams transform accurately back into binary structures."""
+        assert _parse_value("String", "Test String") == pikepdf.String("Test String")
+        assert _parse_value("Name", "DeviceRGB") == pikepdf.Name("/DeviceRGB")
+        assert _parse_value("Name", "/AlreadySlashed") == pikepdf.Name(
+            "/AlreadySlashed"
+        )
+        assert _parse_value("Integer", "  777  ") == 777
+        assert _parse_value("Real", "0.0005") == decimal.Decimal("0.0005")
+        assert _parse_value("Boolean", "yes") is True
+        assert _parse_value("Boolean", "0") is False
+
+    def test_parse_value_invalid_type_string_raises(self):
+        """Guards against bad type mappings."""
+        with pytest.raises(ValueError, match="Unknown type:"):
+            _parse_value("UnsupportedType", "value")
+
+    def test_parse_indirect_reference_handling(self):
+        """Verifies reference parsing logic path constraints and catalog lookups."""
+        pdf = pikepdf.Pdf.new()
+
+        # Missing PDF file parameter check
+        with pytest.raises(ValueError, match="Need a PDF file to resolve"):
+            _parse_value("Indirect Ref", "5 0")
+
+        # Wrong format structure configuration string
+        with pytest.raises(ValueError, match="Expected 'num gen' format"):
+            _parse_value("Indirect Ref", "5", pdf=pdf)
+
+        # Object doesn't exist within tracking catalogs
+        with pytest.raises(ValueError, match="Object '9999 0' not found"):
+            _parse_value("Indirect Ref", "9999 0", pdf=pdf)
+
+
+# ---------------------------------------------------------------------------
+# Additional String Format Structural Layout Edge Cases
+# ---------------------------------------------------------------------------
+
+
+class TestFormatPdfStringMoreEdgeCases:
+    def test_format_pdf_string_explicit_utf16_boms(self):
+        """Validates explicit parsing loops for alternative Unicode profiles."""
+        # UTF-16 Big Endian BOM
+        utf16_be = pikepdf.String(b"\xfe\xff\x00P\x00D\x00F")
+        assert format_pdf_string(utf16_be) == "PDF"
+
+        # UTF-16 Little Endian BOM
+        utf16_le = pikepdf.String(b"\xff\xfeP\x00D\x00F\x00")
+        assert format_pdf_string(utf16_le) == "\ufeffPDF"
