@@ -1,0 +1,104 @@
+name: Debug Windows Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+
+    container:
+      image: docker.io/jeromerobert/wine-mingw64:1.8.1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Basic environment
+        run: |
+          echo "== whoami =="
+          whoami || true
+
+          echo "== id =="
+          id || true
+
+          echo "== pwd =="
+          pwd
+
+          echo "== HOME =="
+          echo "$HOME"
+
+          echo "== env =="
+          env | sort
+
+          echo "== home dirs =="
+          ls -ld /root || true
+          ls -ld /github || true
+          ls -ld /github/home || true
+
+      - name: Wine test (default HOME)
+        continue-on-error: true
+        run: |
+          echo "HOME=$HOME"
+          wine --version
+
+      - name: Wine test (HOME=/root)
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          echo "HOME=$HOME"
+          ls -ld "$HOME"
+          wine --version
+
+      - name: Python version
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe -c "import sys; print(sys.version)"
+          wine /mingw64/bin/python.exe -c "import sys; print(sys.prefix)"
+          wine /mingw64/bin/python.exe -c "import sys; print(sys.executable)"
+
+      - name: Installed packages
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe -m pip list
+
+      - name: cx_Freeze version
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe -c "import cx_Freeze; print(cx_Freeze.__version__)"
+
+      - name: Install project
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe -m pip install --no-deps .
+
+      - name: setup_win32 help
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe windows/setup_win32.py --help
+
+      - name: Build MSI
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe windows/setup_win32.py bdist_msi
+
+      - name: Build ZIP
+        continue-on-error: true
+        run: |
+          export HOME=/root
+          wine /mingw64/bin/python.exe windows/setup_win32.py bdist_zip
+
+      - name: Dump dist
+        if: always()
+        run: |
+          ls -R dist || true
+
+      - name: Dump build
+        if: always()
+        run: |
+          ls -R build || true
