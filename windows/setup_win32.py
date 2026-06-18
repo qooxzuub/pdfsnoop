@@ -129,7 +129,6 @@ def get_target_name(suffix):
     return 'pdfsnoop-{}-windows-{}'.format(VERSION, suffix)
 
 msi_options = dict(
-    output_name=get_target_name('installer.msi'),
     upgrade_code='{d3f2a1b0-4e6c-11ee-be56-0242ac120002}',
     extensions=[{
         "extension": "pdf",
@@ -163,7 +162,6 @@ class bdist_zip(distutils.cmd.Command):
 
 setup(
     name='pdfsnoop',
-    author='qooxzuub',
     version=VERSION,
     description='GTK desktop tool for exploring PDF internals',
     options=dict(build_exe=build_options, bdist_msi=msi_options),
@@ -173,7 +171,7 @@ setup(
         ENTRY_POINT,
         base='Win32GUI' if sys.platform == 'win32' else None,
         targetName='pdfsnoop.exe',
-        shortcut_name='pdfsnoop',
-        shortcut_dir='StartMenuFolder',
+        shortcutName='pdfsnoop',
+        shortcutDir='StartMenuFolder',
     )]
 )
