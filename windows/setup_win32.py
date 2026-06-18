@@ -20,125 +20,86 @@ ENTRY_POINT = os.path.join(REPO_ROOT, 'src', 'pdfsnoop', '__main__.py')
 include_files = []
 
 
+# -----------------------------
+# CLEAN BUILD
+# -----------------------------
 def clean_build():
     if not os.path.isdir('build'):
         return
-    keep = ['lib']
     for d in os.listdir('build'):
-        path = os.path.join('build', d)
-        if d not in keep:
-            shutil.rmtree(path, ignore_errors=True)
+        if d != 'lib':
+            shutil.rmtree(os.path.join('build', d), ignore_errors=True)
 
 clean_build()
 
 
 # -----------------------------
-# GTK COMPLETENESS HELPERS
+# TREE BUNDLER
 # -----------------------------
-def safe_add(relpath, dest=None):
-    src = os.path.join(sys.prefix, relpath)
+def add_tree(src_rel, dst_rel=None):
+    """
+    Recursively include a full GTK/GI/runtime tree.
+    This replaces fragile per-library enumeration.
+    """
+    src = os.path.join(sys.prefix, src_rel)
 
-    if os.path.isfile(src) or os.path.isdir(src):
-        include_files.append((src, dest or relpath))
+    if not os.path.exists(src):
+        print(f"[gtk] missing tree: {src_rel}", file=sys.stderr)
+        return
+
+    if os.path.isdir(src):
+        for root, _, files in os.walk(src):
+            for f in files:
+                full = os.path.join(root, f)
+                rel = os.path.relpath(full, sys.prefix)
+                include_files.append((full, rel))
     else:
-        print(f"[gtk] missing: {relpath}", file=sys.stderr)
-
-
-def addfile(relpath):
-    safe_add(relpath)
+        include_files.append((src, dst_rel or src_rel))
 
 
 # -----------------------------
-# ICONS (SIMPLIFIED + STABLE)
+# GTK / GI COMPLETE RUNTIME
 # -----------------------------
-def addicons():
-    safe_add("share/icons/hicolor")
-    safe_add("share/icons/Adwaita")
+def add_gtk_runtime():
+    # GI + introspection (fixes freetype, harfbuzz, pango, etc.)
+    add_tree("lib/girepository-1.0")
+
+    # GTK core runtime
+    add_tree("lib/gtk-3.0")
+    add_tree("lib/gdk-pixbuf-2.0")
+
+    # Fonts + rendering stack (CRITICAL for freetype2 issue)
+    add_tree("lib/fontconfig")
+    add_tree("lib/freetype2")
+    add_tree("etc/fonts")
+
+    # System schemas + icons
+    add_tree("share/glib-2.0")
+    add_tree("share/icons")
+
+    # Optional poppler data (PDF rendering backend)
+    add_tree("share/poppler")
+
+    # GDK pixbuf loaders must exist for image decoding
+    add_tree("lib/gdk-pixbuf-2.0")
 
 
-# -----------------------------
-# CLEAN BUILD FILE COLLECTION
-# -----------------------------
-required_dlls = ['poppler-glib-8']
-for dll in required_dlls:
-    safe_add(f"bin/lib{dll}.dll", f"lib{dll}.dll")
-
-
-# -----------------------------
-# GI TYPELIBS (COMPLETE SET)
-# -----------------------------
-GI_NAMESPACES = [
-    "Gtk-3.0",
-    "Gdk-3.0",
-    "GdkPixbuf-2.0",
-    "Pango-1.0",
-    "PangoCairo-1.0",
-    "HarfBuzz-0.0",
-    "cairo-1.0",
-    "GObject-2.0",
-    "GLib-2.0",
-    "Gio-2.0",
-    "GModule-2.0",
-    "Atk-1.0",
-    "Poppler-0.18",
-]
-
-for ns in GI_NAMESPACES:
-    safe_add(f"lib/girepository-1.0/{ns}.typelib")
+add_gtk_runtime()
 
 
 # -----------------------------
-# GTK RUNTIME DLLS (CRITICAL FIX)
+# GTK DLL RUNTIME (NO MANUAL LISTING)
 # -----------------------------
-GTK_DLLS = [
-    "bin/libgtk-3-0.dll",
-    "bin/libgdk-3-0.dll",
-    "bin/libpango-1.0-0.dll",
-    "bin/libpangocairo-1.0-0.dll",
-    "bin/libpangoft2-1.0-0.dll",
-    "bin/libharfbuzz-0.dll",
-    "bin/libcairo-2.dll",
-    "bin/libgobject-2.0-0.dll",
-    "bin/libglib-2.0-0.dll",
-]
-
-for dll in GTK_DLLS:
-    safe_add(dll, os.path.basename(dll))
+# Instead of fragile per-DLL selection, include full bin runtime
+add_tree("bin")
 
 
 # -----------------------------
-# PIXBUF LOADERS
-# -----------------------------
-PIXBUF_BASE = "lib/gdk-pixbuf-2.0/2.10.0"
-
-safe_add(f"{PIXBUF_BASE}/loaders.cache")
-
-for loader in [
-    "libpixbufloader-png.dll",
-    "libpixbufloader-bmp.dll",
-    "libpixbufloader-svg.dll",
-]:
-    safe_add(f"{PIXBUF_BASE}/loaders/{loader}")
-
-
-# -----------------------------
-# GLIB SCHEMAS
-# -----------------------------
-safe_add("share/glib-2.0/schemas/gschemas.compiled")
-
-
-# -----------------------------
-# POPPLER DATA
+# POPPLER EXTRA SAFETY
 # -----------------------------
 poppler_dir = os.path.join(sys.prefix, "share/poppler")
 if os.path.isdir(poppler_dir):
     include_files.append((poppler_dir, "lib/share/poppler"))
-
-
-# -----------------------------
-# GSPAWN HELPER
-# -----------------------------
-safe_add("bin/gspawn-win64-helper.exe", "gspawn-win64-helper.exe")
 
 
 # -----------------------------
@@ -156,7 +117,7 @@ def get_target_name(suffix):
 
 
 # -----------------------------
-# MSI (KEPT SIMPLE FOR CX_FREEZE 6.2)
+# MSI (kept minimal for cx_Freeze 6.x compatibility)
 # -----------------------------
 msi_options = dict(
     upgrade_code='{d3f2a1b0-4e6c-11ee-be56-0242ac120002}',
@@ -197,8 +158,7 @@ class bdist_zip(distutils.cmd.Command):
             base_dir=self.distribution.get_fullname()
         )
 
-        if os.path.isdir(build_exe.build_exe):
-            shutil.rmtree(build_exe.build_exe, ignore_errors=True)
+        shutil.rmtree(build_exe.build_exe, ignore_errors=True)
 
 
 # -----------------------------
