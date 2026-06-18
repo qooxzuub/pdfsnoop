@@ -25,7 +25,9 @@ Selecting certain objects highlights them on the page preview:
 
 Requires Python 3.10+, GTK 3, and Poppler.
 
-On Debian/Ubuntu you may need system packages:
+### Debian / Ubuntu
+
+Install system packages:
 
 ```bash
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-poppler-0.18 libgirepository-2.0-dev
@@ -48,6 +50,41 @@ pip install ./pdfsnoop
 ```
 For the second method, if you add `$SNOOPDIR/pdfsnoop-venv/bin` to your `PATH`
 then running `pdfsnoop` should work.
+
+### macOS
+
+The easiest route is [Homebrew](https://brew.sh). Install it if you haven't already, then:
+
+```bash
+# Install GTK 3, Poppler (with GObject introspection), and PyGObject
+brew install gtk+3 pygobject3 poppler
+
+# Clone and install pdfsnoop into a venv that can see the Homebrew packages
+git clone https://github.com/qooxzuub/pdfsnoop
+cd pdfsnoop
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install .
+```
+
+Run it with:
+```bash
+pdfsnoop file.pdf
+```
+
+> **Note:** GTK apps on macOS render through XQuartz or the Quartz backend and may look a little out of place — that's normal. If the window doesn't appear, make sure you haven't accidentally activated a venv without `--system-site-packages` (the Homebrew GTK libraries won't be visible otherwise).
+
+### Windows
+
+A pre-built installer (`.msi`) and portable `.zip` are available on the
+[releases page](https://github.com/qooxzuub/pdfsnoop/releases) — download and
+run, no setup required.
+
+To build the installer locally, install the dependencies listed in the Windows CI workflow, then run:
+
+```
+/mingw64/bin/python3.exe windows/setup_win32.py bdist_msi
+```
 
 ## Usage
 

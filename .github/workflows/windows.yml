@@ -1,0 +1,41 @@
+name: Windows Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    container: docker.io/jeromerobert/wine-mingw64:1.8.1
+
+    env:
+      HOME: /root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pdfsnoop (no deps, container provides them)
+        run: wine /mingw64/bin/python.exe -m pip install --no-deps .
+
+      - name: Build MSI and portable ZIP
+        run: |
+          wine /mingw64/bin/python.exe windows/setup_win32.py bdist_msi
+          wine /mingw64/bin/python.exe windows/setup_win32.py bdist_zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: dist/
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
