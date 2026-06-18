@@ -34,72 +34,35 @@ clean_build()
 
 
 # -----------------------------
-# TREE BUNDLER
+# FULL RUNTIME SNAPSHOT BUNDLER
 # -----------------------------
-def add_tree(src_rel, dst_rel=None):
+def add_runtime_snapshot():
     """
-    Recursively include a full GTK/GI/runtime tree.
-    This replaces fragile per-library enumeration.
+    The ONLY safe way to bundle GTK + Poppler + GI on this image.
+
+    This avoids:
+    - ABI mismatches (your Poppler crash)
+    - missing freetype/harfbuzz/pango typelibs
+    - partial DLL selection bugs in cx_Freeze
     """
-    src = os.path.join(sys.prefix, src_rel)
 
-    if not os.path.exists(src):
-        print(f"[gtk] missing tree: {src_rel}", file=sys.stderr)
-        return
+    roots = ["bin", "lib", "share", "etc"]
 
-    if os.path.isdir(src):
-        for root, _, files in os.walk(src):
+    for r in roots:
+        base = os.path.join(sys.prefix, r)
+
+        if not os.path.exists(base):
+            print(f"[runtime] missing root: {r}", file=sys.stderr)
+            continue
+
+        for root, _, files in os.walk(base):
             for f in files:
                 full = os.path.join(root, f)
                 rel = os.path.relpath(full, sys.prefix)
                 include_files.append((full, rel))
-    else:
-        include_files.append((src, dst_rel or src_rel))
 
 
-# -----------------------------
-# GTK / GI COMPLETE RUNTIME
-# -----------------------------
-def add_gtk_runtime():
-    # GI + introspection (fixes freetype, harfbuzz, pango, etc.)
-    add_tree("lib/girepository-1.0")
-
-    # GTK core runtime
-    add_tree("lib/gtk-3.0")
-    add_tree("lib/gdk-pixbuf-2.0")
-
-    # Fonts + rendering stack (CRITICAL for freetype2 issue)
-    add_tree("lib/fontconfig")
-    add_tree("lib/freetype2")
-    add_tree("etc/fonts")
-
-    # System schemas + icons
-    add_tree("share/glib-2.0")
-    add_tree("share/icons")
-
-    # Optional poppler data (PDF rendering backend)
-    add_tree("share/poppler")
-
-    # GDK pixbuf loaders must exist for image decoding
-    add_tree("lib/gdk-pixbuf-2.0")
-
-
-add_gtk_runtime()
-
-
-# -----------------------------
-# GTK DLL RUNTIME (NO MANUAL LISTING)
-# -----------------------------
-# Instead of fragile per-DLL selection, include full bin runtime
-add_tree("bin")
-
-
-# -----------------------------
-# POPPLER EXTRA SAFETY
-# -----------------------------
-poppler_dir = os.path.join(sys.prefix, "share/poppler")
-if os.path.isdir(poppler_dir):
-    include_files.append((poppler_dir, "lib/share/poppler"))
+add_runtime_snapshot()
 
 
 # -----------------------------
@@ -117,7 +80,7 @@ def get_target_name(suffix):
 
 
 # -----------------------------
-# MSI (kept minimal for cx_Freeze 6.x compatibility)
+# MSI CONFIG (minimal safe mode)
 # -----------------------------
 msi_options = dict(
     upgrade_code='{d3f2a1b0-4e6c-11ee-be56-0242ac120002}',
