@@ -74,6 +74,7 @@ pdfsnoop file.pdf
 
 > **Note:** GTK apps on macOS render through XQuartz or the Quartz backend and may look a little out of place — that's normal. If the window doesn't appear, make sure you haven't accidentally activated a venv without `--system-site-packages` (the Homebrew GTK libraries won't be visible otherwise).
 
+<!--
 ### Windows
 
 A pre-built installer (`.msi`) and portable `.zip` are available on the
@@ -85,6 +86,7 @@ To build the installer locally, install the dependencies listed in the Windows C
 ```
 /mingw64/bin/python3.exe windows/setup_win32.py bdist_msi
 ```
+-->
 
 ## Usage
 
